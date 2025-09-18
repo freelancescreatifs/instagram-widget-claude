@@ -572,20 +572,54 @@ const App = () => {
                 <h1 className="font-semibold text-lg hover:text-blue-500">{profile.username}</h1>
                 <h2 className="text-gray-600 hover:text-blue-500">{profile.fullName}</h2>
               </div>
+              
+              {/* Bouton rapide pour éditer les stats */}
+              <button
+                onClick={() => setEditingProfile(true)}
+                className="mt-1 text-xs text-blue-600 hover:text-blue-800 flex items-center"
+              >
+                ✏️ Modifier les statistiques
+              </button>
             )}
             <div className="flex space-x-8 mt-2">
-              <div className="text-center">
-                <div className="font-semibold">{profile.postsCount || posts.length}</div>
+              <div 
+                className="text-center cursor-pointer hover:bg-gray-50 p-1 rounded transition-colors group" 
+                onClick={() => setEditingProfile(true)}
+                title="Cliquez pour modifier"
+              >
+                <div className="font-semibold text-blue-600 hover:text-blue-800">
+                  {profile.postsCount || posts.length}
+                </div>
                 <div className="text-xs text-gray-600">publications</div>
+                <div className="text-xs text-blue-400 opacity-0 group-hover:opacity-100">✏️</div>
               </div>
-              <div className="text-center">
-                <div className="font-semibold">{profile.followersCount}</div>
+              <div 
+                className="text-center cursor-pointer hover:bg-gray-50 p-1 rounded transition-colors group" 
+                onClick={() => setEditingProfile(true)}
+                title="Cliquez pour modifier"
+              >
+                <div className="font-semibold text-blue-600 hover:text-blue-800">
+                  {profile.followersCount}
+                </div>
                 <div className="text-xs text-gray-600">abonnés</div>
+                <div className="text-xs text-blue-400 opacity-0 group-hover:opacity-100">✏️</div>
               </div>
-              <div className="text-center">
-                <div className="font-semibold">{profile.followingCount}</div>
+              <div 
+                className="text-center cursor-pointer hover:bg-gray-50 p-1 rounded transition-colors group" 
+                onClick={() => setEditingProfile(true)}
+                title="Cliquez pour modifier"
+              >
+                <div className="font-semibold text-blue-600 hover:text-blue-800">
+                  {profile.followingCount}
+                </div>
                 <div className="text-xs text-gray-600">suivi(e)s</div>
+                <div className="text-xs text-blue-400 opacity-0 group-hover:opacity-100">✏️</div>
               </div>
+            </div>
+            
+            {/* Indicateur visuel */}
+            <div className="text-center mt-1">
+              <p className="text-xs text-blue-500 opacity-75">👆 Cliquez sur les chiffres pour les modifier</p>
             </div>
           </div>
         </div>
@@ -613,44 +647,59 @@ const App = () => {
               />
             </div>
             
-            {/* Section Statistiques */}
-            <div className="border-t pt-3">
-              <label className="block text-xs text-gray-500 mb-2 font-medium">📊 Statistiques du profil</label>
+            {/* Section Statistiques - Plus visible */}
+            <div className="border border-blue-200 rounded-lg p-3 bg-blue-50">
+              <div className="flex items-center justify-between mb-3">
+                <label className="block text-sm font-medium text-blue-800">
+                  📊 Statistiques Instagram
+                </label>
+                <div className="text-xs text-blue-600">Cliquez pour personnaliser</div>
+              </div>
+              
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">Publications</label>
+                  <label className="block text-xs text-blue-700 mb-1 font-medium">Publications</label>
                   <input
                     type="text"
                     value={profile.postsCount}
                     onChange={(e) => setProfile({...profile, postsCount: e.target.value})}
-                    className="text-sm w-full p-2 border border-gray-300 rounded focus:border-blue-500 outline-none text-center"
-                    placeholder="0"
+                    className="text-sm w-full p-2 border border-blue-300 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none text-center bg-white"
+                    placeholder={posts.length.toString()}
                   />
+                  <div className="text-xs text-blue-600 mt-1">Auto: {posts.length}</div>
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">Abonnés</label>
+                  <label className="block text-xs text-blue-700 mb-1 font-medium">Abonnés</label>
                   <input
                     type="text"
                     value={profile.followersCount}
                     onChange={(e) => setProfile({...profile, followersCount: e.target.value})}
-                    className="text-sm w-full p-2 border border-gray-300 rounded focus:border-blue-500 outline-none text-center"
+                    className="text-sm w-full p-2 border border-blue-300 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none text-center bg-white"
                     placeholder="1,234"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-400 mb-1">Suivi(e)s</label>
+                  <label className="block text-xs text-blue-700 mb-1 font-medium">Suivi(e)s</label>
                   <input
                     type="text"
                     value={profile.followingCount}
                     onChange={(e) => setProfile({...profile, followingCount: e.target.value})}
-                    className="text-sm w-full p-2 border border-gray-300 rounded focus:border-blue-500 outline-none text-center"
+                    className="text-sm w-full p-2 border border-blue-300 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none text-center bg-white"
                     placeholder="567"
                   />
                 </div>
               </div>
-              <p className="text-xs text-gray-400 mt-2">
-                💡 Utilisez le format "1,234" ou "15K" ou "2.5M" pour un rendu authentique
-              </p>
+              
+              <div className="mt-3 p-2 bg-white rounded border border-blue-200">
+                <p className="text-xs text-blue-700 font-medium mb-1">💡 Exemples de formats :</p>
+                <div className="text-xs text-blue-600 flex flex-wrap gap-2">
+                  <span className="bg-blue-100 px-2 py-0.5 rounded">1,234</span>
+                  <span className="bg-blue-100 px-2 py-0.5 rounded">15.2K</span>
+                  <span className="bg-blue-100 px-2 py-0.5 rounded">2.5M</span>
+                  <span className="bg-blue-100 px-2 py-0.5 rounded">890K+</span>
+                  <span className="bg-blue-100 px-2 py-0.5 rounded">1M+</span>
+                </div>
+              </div>
             </div>
             
             <div className="flex space-x-2">
