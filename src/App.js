@@ -19,11 +19,14 @@ const App = () => {
     username: 'mon_compte',
     fullName: 'Mon Nom',
     bio: 'Créateur de contenu 📸\nPartage mes aventures quotidiennes ✨\n🌍 Paris, France',
-    profilePhoto: ''
+    profilePhoto: '',
+    followersCount: '1,234',
+    followingCount: '567',
+    postsCount: 0
   });
 
-  // URL de l'API proxy (sera votre domaine Vercel)
-  const API_BASE = window.location.origin + '/api';
+  // URL de l'API proxy - Utilisez votre domaine Vercel exact
+  const API_BASE = 'https://instagram-widget-claude-55dg.vercel.app/api';
 
   // Test de connexion à Notion via le proxy
   const testNotionConnection = async (apiKey, databaseId) => {
@@ -83,6 +86,26 @@ const App = () => {
         setPosts(data.posts || []);
         setConnectionStatus(`✅ ${data.count} posts synchronisés`);
         console.log(`${data.count} posts récupérés depuis Notion`);
+        
+        // Debug: afficher les détails des posts pour diagnostic
+        if (data.posts && data.posts.length > 0) {
+          console.log('Premier post récupéré:', data.posts[0]);
+          data.posts.forEach((post, index) => {
+            console.log(`Post ${index + 1}:`, {
+              title: post.title,
+              hasFiles: post.urls.length > 0,
+              fileCount: post.urls.length,
+              type: post.type,
+              date: post.date,
+              debug: post.debug
+            });
+          });
+        } else {
+          console.log('Aucun post trouvé. Vérifiez:');
+          console.log('- Que votre base contient des lignes');
+          console.log('- Que les colonnes ont les bons types');
+          console.log('- Que des fichiers sont uploadés dans la colonne media');
+        }
       } else {
         throw new Error(data.error || 'Erreur lors de la récupération');
       }
@@ -170,6 +193,27 @@ const App = () => {
 
   useEffect(() => {
     loadConfig();
+    
+    // Test de l'API au chargement pour diagnostic
+    const testAPI = async () => {
+      try {
+        console.log('Testing API endpoint:', `${API_BASE}/notion`);
+        const response = await fetch(`${API_BASE}/notion`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ test: true })
+        });
+        console.log('API Test Response:', response.status, response.ok);
+        if (!response.ok) {
+          const text = await response.text();
+          console.log('API Error Text:', text);
+        }
+      } catch (error) {
+        console.error('API Test Failed:', error);
+      }
+    };
+    
+    testAPI();
   }, []);
 
   // Récupérer les posts quand la config est prête
@@ -531,15 +575,15 @@ const App = () => {
             )}
             <div className="flex space-x-8 mt-2">
               <div className="text-center">
-                <div className="font-semibold">{posts.length}</div>
+                <div className="font-semibold">{profile.postsCount || posts.length}</div>
                 <div className="text-xs text-gray-600">publications</div>
               </div>
               <div className="text-center">
-                <div className="font-semibold">1,234</div>
+                <div className="font-semibold">{profile.followersCount}</div>
                 <div className="text-xs text-gray-600">abonnés</div>
               </div>
               <div className="text-center">
-                <div className="font-semibold">567</div>
+                <div className="font-semibold">{profile.followingCount}</div>
                 <div className="text-xs text-gray-600">suivi(e)s</div>
               </div>
             </div>
@@ -568,6 +612,47 @@ const App = () => {
                 placeholder="Votre bio..."
               />
             </div>
+            
+            {/* Section Statistiques */}
+            <div className="border-t pt-3">
+              <label className="block text-xs text-gray-500 mb-2 font-medium">📊 Statistiques du profil</label>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Publications</label>
+                  <input
+                    type="text"
+                    value={profile.postsCount}
+                    onChange={(e) => setProfile({...profile, postsCount: e.target.value})}
+                    className="text-sm w-full p-2 border border-gray-300 rounded focus:border-blue-500 outline-none text-center"
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Abonnés</label>
+                  <input
+                    type="text"
+                    value={profile.followersCount}
+                    onChange={(e) => setProfile({...profile, followersCount: e.target.value})}
+                    className="text-sm w-full p-2 border border-gray-300 rounded focus:border-blue-500 outline-none text-center"
+                    placeholder="1,234"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-400 mb-1">Suivi(e)s</label>
+                  <input
+                    type="text"
+                    value={profile.followingCount}
+                    onChange={(e) => setProfile({...profile, followingCount: e.target.value})}
+                    className="text-sm w-full p-2 border border-gray-300 rounded focus:border-blue-500 outline-none text-center"
+                    placeholder="567"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-gray-400 mt-2">
+                💡 Utilisez le format "1,234" ou "15K" ou "2.5M" pour un rendu authentique
+              </p>
+            </div>
+            
             <div className="flex space-x-2">
               <button
                 onClick={saveProfile}
@@ -618,6 +703,28 @@ const App = () => {
               <p className="text-amber-600 text-xs">
                 Cliquez sur ⚙️ pour connecter votre base avec la colonne "Contenu" (Files & media)
               </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Message si connecté mais pas de posts */}
+      {notionConfig.connected && posts.length === 0 && !refreshing && (
+        <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 m-4">
+          <div className="flex items-center">
+            <Upload className="h-4 w-4 text-yellow-400 mr-2" />
+            <div>
+              <p className="text-yellow-700 text-sm font-medium">
+                ⚠️ Aucun post trouvé dans votre base Notion
+              </p>
+              <p className="text-yellow-600 text-xs mt-1">
+                Vérifiez que :
+              </p>
+              <ul className="text-yellow-600 text-xs mt-1 list-disc list-inside">
+                <li>Votre base contient des lignes avec des données</li>
+                <li>La colonne Files & media contient des images/vidéos</li>
+                <li>Ouvrez la console (F12) pour plus de détails</li>
+              </ul>
             </div>
           </div>
         </div>
