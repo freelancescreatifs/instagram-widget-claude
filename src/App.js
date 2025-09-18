@@ -25,8 +25,8 @@ const App = () => {
     postsCount: 0
   });
 
-  // URL de l'API proxy - Utilisez votre domaine Vercel exact
-  const API_BASE = 'https://instagram-widget-claude-55dg.vercel.app/api';
+  // URL de l'API proxy - Votre nouvelle URL Vercel
+  const API_BASE = 'https://instagram-widget-claude-new.vercel.app/api';
 
   // Test de connexion à Notion via le proxy
   const testNotionConnection = async (apiKey, databaseId) => {
