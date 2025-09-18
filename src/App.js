@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Calendar, RefreshCw, Settings, Camera, Heart, MessageCircle, Upload } from 'lucide-react';
+import { Calendar, RefreshCw, Settings, Camera, Heart, MessageCircle, Upload, CheckCircle, XCircle } from 'lucide-react';
 
 const App = () => {
   const [posts, setPosts] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [connecting, setConnecting] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState('');
   const [notionConfig, setNotionConfig] = useState({
     connected: false,
     apiKey: '',
@@ -20,97 +22,83 @@ const App = () => {
     profilePhoto: ''
   });
 
-  // Fonction pour déterminer si un fichier est une vidéo
-  const isVideoFile = (filename) => {
-    const videoExtensions = ['.mp4', '.mov', '.avi', '.webm', '.mkv', '.m4v'];
-    return videoExtensions.some(ext => filename.toLowerCase().includes(ext));
+  // URL de l'API proxy (sera votre domaine Vercel)
+  const API_BASE = window.location.origin + '/api';
+
+  // Test de connexion à Notion via le proxy
+  const testNotionConnection = async (apiKey, databaseId) => {
+    try {
+      const response = await fetch(`${API_BASE}/notion`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          apiKey,
+          databaseId,
+          action: 'test'
+        })
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        return { success: true, message: data.message };
+      } else {
+        return { success: false, error: data.error || 'Erreur de connexion' };
+      }
+    } catch (error) {
+      console.error('Erreur test connexion:', error);
+      return { success: false, error: 'Erreur de réseau - Vérifiez votre connexion' };
+    }
   };
 
-  // Fonction pour récupérer les posts depuis Notion
+  // Récupérer les posts via l'API proxy
   const fetchNotionPosts = async () => {
-    if (!notionConfig.apiKey || !notionConfig.databaseId) {
-      console.log('Configuration Notion manquante');
+    if (!notionConfig.apiKey || !notionConfig.databaseId || !notionConfig.connected) {
+      console.log('Configuration Notion manquante ou non connectée');
+      setLoading(false);
       return;
     }
 
     try {
       setRefreshing(true);
+      setConnectionStatus('Récupération des posts...');
       
-      const response = await fetch('https://api.notion.com/v1/databases/' + notionConfig.databaseId + '/query', {
+      const response = await fetch(`${API_BASE}/notion`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${notionConfig.apiKey}`,
           'Content-Type': 'application/json',
-          'Notion-Version': '2022-06-28'
         },
         body: JSON.stringify({
-          sorts: [
-            {
-              property: 'Date',
-              direction: 'descending'
-            }
-          ]
+          apiKey: notionConfig.apiKey,
+          databaseId: notionConfig.databaseId,
+          action: 'query'
         })
       });
 
-      if (!response.ok) {
-        throw new Error(`Erreur Notion: ${response.status} - ${response.statusText}`);
-      }
-
       const data = await response.json();
-      
-      const formattedPosts = data.results.map(page => {
-        const properties = page.properties;
-        
-        // Récupérer les fichiers depuis la propriété "Contenu"
-        const files = properties.Contenu?.files || [];
-        const urls = files.map(file => {
-          // Les fichiers Notion ont soit file.file.url soit file.external.url
-          return file.file?.url || file.external?.url || '';
-        }).filter(url => url);
 
-        // Déterminer automatiquement le type basé sur les fichiers
-        let autoType = 'image';
-        if (files.length > 1) {
-          autoType = 'carrousel';
-        } else if (files.length === 1 && files[0].name && isVideoFile(files[0].name)) {
-          autoType = 'video';
-        }
-
-        // Utiliser le type manuel s'il existe, sinon le type auto-détecté
-        const manualType = properties.Type?.select?.name?.toLowerCase();
-        const finalType = manualType || autoType;
-        
-        return {
-          id: page.id,
-          date: properties.Date?.date?.start || new Date().toISOString().split('T')[0],
-          type: finalType,
-          urls: urls.length > 0 ? urls : ['https://picsum.photos/1080/1350?random=' + Math.floor(Math.random() * 100)],
-          caption: properties.Caption?.rich_text?.[0]?.text?.content || '',
-          title: properties.Titre?.title?.[0]?.text?.content || 'Post sans titre',
-          fileNames: files.map(file => file.name || 'Fichier sans nom')
-        };
-      });
-
-      setPosts(formattedPosts);
-      console.log(`${formattedPosts.length} posts récupérés depuis Notion`);
-      
-      // Afficher les détails des posts pour debug
-      formattedPosts.forEach(post => {
-        console.log(`Post "${post.title}": ${post.urls.length} fichier(s), Type: ${post.type}`);
-      });
+      if (response.ok && data.success) {
+        setPosts(data.posts || []);
+        setConnectionStatus(`✅ ${data.count} posts synchronisés`);
+        console.log(`${data.count} posts récupérés depuis Notion`);
+      } else {
+        throw new Error(data.error || 'Erreur lors de la récupération');
+      }
       
     } catch (error) {
       console.error('Erreur lors de la récupération des posts:', error);
-      alert(`Erreur de connexion à Notion: ${error.message}\n\nVérifiez:\n- Votre clé API\n- L'ID de la base\n- Que l'intégration a accès à la base`);
+      setConnectionStatus(`❌ ${error.message}`);
+      alert(`Erreur: ${error.message}`);
     } finally {
       setRefreshing(false);
       setLoading(false);
     }
   };
 
-  // Fonction pour sauvegarder la configuration
-  const saveNotionConfig = () => {
+  // Sauvegarder et tester la configuration
+  const saveNotionConfig = async () => {
     try {
       // Validation basique
       if (!notionConfig.apiKey || !notionConfig.databaseId) {
@@ -128,18 +116,36 @@ const App = () => {
         return;
       }
 
-      localStorage.setItem('notion-config', JSON.stringify(notionConfig));
-      localStorage.setItem('instagram-widget-profile', JSON.stringify(profile));
-      setEditingConfig(false);
-      setNotionConfig(prev => ({ ...prev, connected: true }));
+      setConnecting(true);
+      setConnectionStatus('Test de connexion...');
+
+      // Test de connexion d'abord
+      const testResult = await testNotionConnection(notionConfig.apiKey, notionConfig.databaseId);
+
+      if (testResult.success) {
+        // Sauvegarder la config
+        localStorage.setItem('notion-config', JSON.stringify(notionConfig));
+        localStorage.setItem('instagram-widget-profile', JSON.stringify(profile));
+        
+        setNotionConfig(prev => ({ ...prev, connected: true }));
+        setEditingConfig(false);
+        setConnectionStatus('✅ Connecté avec succès !');
+        
+        // Récupérer les posts après connexion
+        setTimeout(() => fetchNotionPosts(), 500);
+        
+        console.log('Configuration sauvegardée et connexion établie');
+      } else {
+        setConnectionStatus(`❌ ${testResult.error}`);
+        alert(`Erreur de connexion: ${testResult.error}`);
+      }
       
-      // Récupérer les posts après configuration
-      fetchNotionPosts();
-      
-      console.log('Configuration sauvegardée et connexion établie');
     } catch (error) {
       console.error('Erreur sauvegarde:', error);
-      alert('Erreur lors de la sauvegarde de la configuration');
+      setConnectionStatus(`❌ ${error.message}`);
+      alert('Erreur lors de la configuration');
+    } finally {
+      setConnecting(false);
     }
   };
 
@@ -179,7 +185,6 @@ const App = () => {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [imageError, setImageError] = useState(false);
 
-    // Gestion d'erreur d'image
     const handleImageError = () => {
       setImageError(true);
     };
@@ -187,7 +192,7 @@ const App = () => {
     if (post.type === 'video' || post.type === 'vidéo') {
       return (
         <div className="relative w-full h-full">
-          {imageError ? (
+          {imageError || !post.urls[0] ? (
             <div className="w-full h-full bg-gray-200 flex items-center justify-center">
               <div className="text-center">
                 <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
@@ -221,7 +226,7 @@ const App = () => {
     if (post.type === 'carousel' || post.type === 'carrousel') {
       return (
         <div className="relative w-full h-full">
-          {imageError ? (
+          {imageError || !post.urls[currentIndex] ? (
             <div className="w-full h-full bg-gray-200 flex items-center justify-center">
               <div className="text-center">
                 <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
@@ -244,20 +249,19 @@ const App = () => {
                 </svg>
               </div>
               
-              <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 flex space-x-1">
-                {post.urls.map((_, idx) => (
-                  <div
-                    key={idx}
-                    className={`w-1.5 h-1.5 rounded-full cursor-pointer ${
-                      idx === currentIndex ? 'bg-white' : 'bg-white bg-opacity-50'
-                    }`}
-                    onClick={() => setCurrentIndex(idx)}
-                  />
-                ))}
-              </div>
-
               {post.urls.length > 1 && (
                 <>
+                  <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 flex space-x-1">
+                    {post.urls.map((_, idx) => (
+                      <div
+                        key={idx}
+                        className={`w-1.5 h-1.5 rounded-full cursor-pointer ${
+                          idx === currentIndex ? 'bg-white' : 'bg-white bg-opacity-50'
+                        }`}
+                        onClick={() => setCurrentIndex(idx)}
+                      />
+                    ))}
+                  </div>
                   {currentIndex > 0 && (
                     <button 
                       className="absolute left-2 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 text-white w-6 h-6 rounded-full flex items-center justify-center text-sm hover:bg-opacity-70"
@@ -290,7 +294,7 @@ const App = () => {
 
     return (
       <div className="relative w-full h-full">
-        {imageError ? (
+        {imageError || !post.urls[0] ? (
           <div className="w-full h-full bg-gray-200 flex items-center justify-center">
             <div className="text-center">
               <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
@@ -342,7 +346,6 @@ const App = () => {
     }));
 
     setDraggedItem(null);
-    
     console.log(`Post "${draggedItem.title}" déplacé du ${draggedDate} au ${targetDate}`);
   };
 
@@ -384,7 +387,7 @@ const App = () => {
             }`}
           >
             <Settings size={14} />
-            {notionConfig.connected && <span className="text-xs">✓</span>}
+            {notionConfig.connected ? <CheckCircle size={12} /> : <XCircle size={12} />}
           </button>
         </div>
       </div>
@@ -403,7 +406,7 @@ const App = () => {
               <ul className="list-disc list-inside mt-1 text-xs">
                 <li><strong>Contenu</strong> (Files & media) - Glissez vos images/vidéos</li>
                 <li><strong>Date</strong> (Date) - Date de publication</li>
-                <li><strong>Type</strong> (Select) - Image/Carrousel/Vidéo</li>
+                <li><strong>Type</strong> (Select) - Image/Carrousel/Vidéo (optionnel)</li>
                 <li><strong>Caption</strong> (Text) - Description</li>
               </ul>
             </div>
@@ -439,14 +442,32 @@ const App = () => {
                 32 caractères dans l'URL de votre base
               </p>
             </div>
+
+            {/* Status de connexion */}
+            {connectionStatus && (
+              <div className={`p-2 rounded text-sm ${
+                connectionStatus.includes('✅') 
+                  ? 'bg-green-50 text-green-800' 
+                  : connectionStatus.includes('❌') 
+                  ? 'bg-red-50 text-red-800'
+                  : 'bg-blue-50 text-blue-800'
+              }`}>
+                {connectionStatus}
+              </div>
+            )}
             
             <div className="flex space-x-2">
               <button
                 onClick={saveNotionConfig}
-                className="bg-blue-500 text-white px-4 py-2 rounded text-sm hover:bg-blue-600 flex items-center"
+                disabled={connecting}
+                className="bg-blue-500 text-white px-4 py-2 rounded text-sm hover:bg-blue-600 flex items-center disabled:opacity-50"
               >
-                <Upload className="w-4 h-4 mr-1" />
-                Connecter
+                {connecting ? (
+                  <RefreshCw className="w-4 h-4 mr-1 animate-spin" />
+                ) : (
+                  <Upload className="w-4 h-4 mr-1" />
+                )}
+                {connecting ? 'Test...' : 'Connecter'}
               </button>
               <button
                 onClick={() => setEditingConfig(false)}
@@ -669,6 +690,9 @@ const App = () => {
             : '📁 Glissez vos fichiers dans Notion → Connectez ici → Synchronisez !'
           }
         </p>
+        {connectionStatus && (
+          <p className="mt-1 text-xs text-gray-500">{connectionStatus}</p>
+        )}
       </div>
     </div>
   );
