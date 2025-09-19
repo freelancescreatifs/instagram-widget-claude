@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Camera, Settings, Heart, MessageCircle, MoreHorizontal, RefreshCw, Edit3, Users, UserPlus } from 'lucide-react';
 
 // Configuration de l'API - Votre domaine Vercel
-const API_BASE = 'https://instagram-widget-claude-8-new.vercel.app/api';
+const API_BASE = 'https://instagram-widget-claude.vercel.app/api';
 
 // Composant pour afficher les médias (images, carrousels, vidéos)
 const MediaDisplay = ({ urls, type, title }) => {
@@ -268,7 +268,16 @@ function InstagramNotionWidget() {
       if (response.ok && data.success) {
         setPosts(data.posts || []);
         setConnectionStatus('connected');
-        setError(`✅ Connecté à Notion • ${data.posts?.length || 0} post(s) synchronisé(s)`);
+        
+        // Affichage détaillé des informations de debug
+        if (data.debug) {
+          const debug = data.debug;
+          setError(`✅ Connecté à Notion • ${debug.postsWithMedia}/${debug.totalRows} post(s) avec média
+📊 Colonnes détectées: ${debug.availableProperties.join(', ')}
+🔍 Mapping: ${Object.entries(debug.mappedProperties).map(([k,v]) => `${k}=${v||'❌'}`).join(', ')}`);
+        } else {
+          setError(`✅ Connecté à Notion • ${data.posts?.length || 0} post(s) synchronisé(s)`);
+        }
       } else {
         setError(data.error || 'Erreur lors du chargement des posts');
         setPosts(mockPosts); // Fallback vers les données mockées
