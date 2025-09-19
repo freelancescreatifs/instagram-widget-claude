@@ -106,6 +106,8 @@ function InstagramNotionWidget() {
   const [error, setError] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [modalPost, setModalPost] = useState(null);
+  const [draggedPost, setDraggedPost] = useState(null);
 
   // Configuration Notion
   const [notionConfig, setNotionConfig] = useState({
@@ -268,16 +270,8 @@ function InstagramNotionWidget() {
       if (response.ok && data.success) {
         setPosts(data.posts || []);
         setConnectionStatus('connected');
-        
-        // Affichage détaillé des informations de debug
-        if (data.debug) {
-          const debug = data.debug;
-          setError(`✅ Connecté à Notion • ${debug.postsWithMedia}/${debug.totalRows} post(s) avec média
-📊 Colonnes détectées: ${debug.availableProperties.join(', ')}
-🔍 Mapping: ${Object.entries(debug.mappedProperties).map(([k,v]) => `${k}=${v||'❌'}`).join(', ')}`);
-        } else {
-          setError(`✅ Connecté à Notion • ${data.posts?.length || 0} post(s) synchronisé(s)`);
-        }
+        // Message simplifié selon la demande
+        setError(`✅ Connecté à Notion • ${data.posts?.length || 0}/${data.debug?.totalRows || data.posts?.length || 0} post(s)`);
       } else {
         setError(data.error || 'Erreur lors du chargement des posts');
         setPosts(mockPosts); // Fallback vers les données mockées
@@ -293,6 +287,28 @@ function InstagramNotionWidget() {
     setIsRefreshing(true);
     await loadPostsFromNotion();
     setTimeout(() => setIsRefreshing(false), 500);
+  };
+
+  // Mettre à jour la date d'un post dans Notion lors du drag & drop
+  const updatePostDate = async (postId, newDate) => {
+    if (!notionConfig.apiKey || !notionConfig.databaseId) return;
+
+    try {
+      await fetch(`${API_BASE}/notion`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'updateDate',
+          apiKey: notionConfig.apiKey,
+          postId: postId,
+          newDate: newDate
+        })
+      });
+    } catch (error) {
+      console.error('Erreur mise à jour date:', error);
+    }
   };
 
   // Gestion du profil
@@ -332,26 +348,97 @@ function InstagramNotionWidget() {
     }, 100);
   };
 
-  // Drag & Drop (simulation - pour la démo)
+  // Drag & Drop avec mise à jour Notion
   const handleDragStart = (e, post) => {
-    e.dataTransfer.setData('text/plain', post.id);
+    setDraggedPost(post);
+    e.dataTransfer.effectAllowed = 'move';
   };
 
-  const handleDrop = (e, targetIndex) => {
+  const handleDragOver = (e) => {
     e.preventDefault();
-    const draggedId = e.dataTransfer.getData('text/plain');
-    // Simulation de réorganisation
-    console.log(`Post ${draggedId} moved to position ${targetIndex}`);
+    e.dataTransfer.dropEffect = 'move';
+  };
+
+  const handleDrop = async (e, targetIndex) => {
+    e.preventDefault();
+    
+    if (!draggedPost) return;
+
+    const newPosts = [...posts];
+    const draggedIndex = newPosts.findIndex(p => p.id === draggedPost.id);
+    
+    if (draggedIndex === -1 || draggedIndex === targetIndex) return;
+
+    // Réorganiser les posts
+    const [draggedItem] = newPosts.splice(draggedIndex, 1);
+    newPosts.splice(targetIndex, 0, draggedItem);
+
+    // Calculer la nouvelle date basée sur la position
+    const targetPost = posts[targetIndex];
+    let newDate;
+    
+    if (targetPost) {
+      // Utiliser la date du post de destination
+      newDate = targetPost.date;
+    } else {
+      // Si pas de post cible, utiliser la date d'aujourd'hui
+      newDate = new Date().toISOString().split('T')[0];
+    }
+
+    // Mettre à jour localement
+    draggedItem.date = newDate;
+    setPosts(newPosts);
+
+    // Mettre à jour dans Notion
+    await updatePostDate(draggedItem.id, newDate);
+    
+    setDraggedPost(null);
+  };
+
+  // Ouvrir modal
+  const openModal = (post) => {
+    setModalPost(post);
+  };
+
+  const closeModal = () => {
+    setModalPost(null);
+  };
+
+  // Redimensionner les images pour forcer le format 1080x1350
+  const getResizedImageUrl = (originalUrl) => {
+    // Si c'est une URL Picsum, on peut forcer la taille
+    if (originalUrl.includes('picsum.photos')) {
+      return originalUrl.replace(/\/\d+\/\d+/, '/1080/1350');
+    }
+    // Pour les autres URLs, on garde l'originale (la CSS s'occupe du redimensionnement)
+    return originalUrl;
   };
 
   // Grille de posts (3x4 = 12 positions fixes)
   const gridPosts = Array(12).fill(null);
   posts.slice(0, 12).forEach((post, index) => {
-    gridPosts[index] = post;
+    // Redimensionner les URLs d'images
+    const resizedPost = {
+      ...post,
+      urls: post.urls?.map(getResizedImageUrl) || []
+    };
+    gridPosts[index] = resizedPost;
   });
 
   return (
-    <div className="max-w-md mx-auto bg-white border border-gray-200 font-sans">
+    <div className="max-w-md mx-auto bg-white border border-gray-200 font-sans relative">
+      {/* Filigrane Freelance Créatif */}
+      <div className="absolute top-2 left-2 z-10">
+        <a 
+          href="https://www.instagram.com/freelance.creatif/" 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="text-xs text-gray-500 hover:text-gray-700 transition-colors bg-white bg-opacity-80 px-2 py-1 rounded backdrop-blur-sm"
+        >
+          Créé par @Freelancecreatif
+        </a>
+      </div>
+
       {/* Header Instagram */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200">
         <div className="flex items-center space-x-3">
@@ -464,36 +551,36 @@ function InstagramNotionWidget() {
 
               <div className="flex-1">
                 <div className="flex items-center justify-between">
-                  {/* Statistiques cliquables */}
+                  {/* Statistiques cliquables - MAINTENANT EN NOIR */}
                   <div className="flex space-x-6">
                     <div 
-                      className="text-center cursor-pointer hover:bg-blue-50 px-2 py-1 rounded transition-colors group"
+                      className="text-center cursor-pointer hover:bg-gray-50 px-2 py-1 rounded transition-colors group"
                       onClick={() => editStat('posts')}
                       title="Cliquez pour modifier"
                     >
-                      <div className="font-bold text-blue-600 group-hover:text-blue-800 flex items-center">
+                      <div className="font-bold text-gray-900 group-hover:text-black flex items-center">
                         {getDisplayStats().posts}
                         <Edit3 className="w-3 h-3 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
                       </div>
                       <div className="text-sm text-gray-600">posts</div>
                     </div>
                     <div 
-                      className="text-center cursor-pointer hover:bg-blue-50 px-2 py-1 rounded transition-colors group"
+                      className="text-center cursor-pointer hover:bg-gray-50 px-2 py-1 rounded transition-colors group"
                       onClick={() => editStat('followers')}
                       title="Cliquez pour modifier"
                     >
-                      <div className="font-bold text-blue-600 group-hover:text-blue-800 flex items-center">
+                      <div className="font-bold text-gray-900 group-hover:text-black flex items-center">
                         {getDisplayStats().followers}
                         <Edit3 className="w-3 h-3 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
                       </div>
                       <div className="text-sm text-gray-600">abonnés</div>
                     </div>
                     <div 
-                      className="text-center cursor-pointer hover:bg-blue-50 px-2 py-1 rounded transition-colors group"
+                      className="text-center cursor-pointer hover:bg-gray-50 px-2 py-1 rounded transition-colors group"
                       onClick={() => editStat('following')}
                       title="Cliquez pour modifier"
                     >
-                      <div className="font-bold text-blue-600 group-hover:text-blue-800 flex items-center">
+                      <div className="font-bold text-gray-900 group-hover:text-black flex items-center">
                         {getDisplayStats().following}
                         <Edit3 className="w-3 h-3 ml-1 opacity-0 group-hover:opacity-100 transition-opacity" />
                       </div>
@@ -676,7 +763,7 @@ function InstagramNotionWidget() {
         </div>
       </div>
 
-      {/* Grille de posts 3x4 */}
+      {/* Grille de posts 3x4 avec drag & drop amélioré */}
       <div className="grid grid-cols-3 gap-1 aspect-square">
         {gridPosts.map((post, index) => (
           <div
@@ -685,31 +772,17 @@ function InstagramNotionWidget() {
             draggable={!!post}
             onDragStart={(e) => post && handleDragStart(e, post)}
             onDrop={(e) => handleDrop(e, index)}
-            onDragOver={(e) => e.preventDefault()}
+            onDragOver={handleDragOver}
             style={{ aspectRatio: '1080/1350' }}
           >
             {post ? (
-              <>
-                <MediaDisplay 
-                  urls={post.urls} 
-                  type={post.type} 
-                  title={post.title}
-                />
-                
-                {/* Overlay au hover */}
-                <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-300 flex items-center justify-center">
-                  <div className="opacity-0 group-hover:opacity-100 transition-opacity flex items-center space-x-4 text-white">
-                    <div className="flex items-center space-x-1">
-                      <Heart className="w-6 h-6" fill="currentColor" />
-                      <span className="font-bold">{Math.floor(Math.random() * 1000)}</span>
-                    </div>
-                    <div className="flex items-center space-x-1">
-                      <MessageCircle className="w-6 h-6" fill="currentColor" />
-                      <span className="font-bold">{Math.floor(Math.random() * 100)}</span>
-                    </div>
-                  </div>
-                </div>
-              </>
+              <MediaDisplay 
+                urls={post.urls} 
+                type={post.type} 
+                title={post.title}
+                caption={post.caption}
+                onOpenModal={openModal}
+              />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-gray-400">
                 <Camera className="w-8 h-8" />
@@ -718,6 +791,13 @@ function InstagramNotionWidget() {
           </div>
         ))}
       </div>
+
+      {/* Modal pour afficher les posts en détail */}
+      <PostModal 
+        post={modalPost}
+        isOpen={!!modalPost}
+        onClose={closeModal}
+      />
     </div>
   );
 }
