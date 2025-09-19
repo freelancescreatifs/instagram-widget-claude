@@ -234,9 +234,6 @@ export default async function handler(req, res) {
             };
           }).filter(post => post.hasContent); // Filtrer les posts sans média
 
-          console.log(`Processed ${posts.length} posts with media from ${data.results.length} total rows`);
-          console.log('Posts with media:', posts.map(p => ({ title: p.title, urlCount: p.urls.length })));
-
           return res.status(200).json({ 
             success: true, 
             posts,
