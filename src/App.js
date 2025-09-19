@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, Settings, Heart, MessageCircle, MoreHorizontal, RefreshCw, Edit3, Users, UserPlus } from 'lucide-react';
+import { Camera, Settings, RefreshCw, Edit3, X, ChevronLeft, ChevronRight, Play } from 'lucide-react';
 
 // Configuration de l'API - Votre domaine Vercel
 const API_BASE = 'https://instagram-widget-claude.vercel.app/api';
 
-// Composant pour afficher les médias (images, carrousels, vidéos)
-const MediaDisplay = ({ urls, type, title }) => {
+// Composant pour afficher les médias avec modal
+const MediaDisplay = ({ urls, type, title, caption, onOpenModal }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [isVideoPlaying, setIsVideoPlaying] = useState(false);
-
+  
   if (!urls || urls.length === 0) {
     return (
       <div className="w-full h-full bg-gray-200 flex items-center justify-center">
@@ -21,39 +20,49 @@ const MediaDisplay = ({ urls, type, title }) => {
     return url && (url.includes('.mp4') || url.includes('.mov') || url.includes('.webm'));
   };
 
-  const nextImage = () => {
+  const currentUrl = urls[currentIndex];
+
+  const nextImage = (e) => {
+    e.stopPropagation();
     setCurrentIndex((prev) => (prev + 1) % urls.length);
   };
 
-  const prevImage = () => {
+  const prevImage = (e) => {
+    e.stopPropagation();
     setCurrentIndex((prev) => (prev - 1 + urls.length) % urls.length);
   };
 
-  const currentUrl = urls[currentIndex];
-
   return (
-    <div className="relative w-full h-full group">
+    <div 
+      className="relative w-full h-full group cursor-pointer"
+      onClick={() => onOpenModal && onOpenModal({ urls, type, title, caption, startIndex: currentIndex })}
+    >
       {isVideo(currentUrl) ? (
-        <video
-          src={currentUrl}
-          className="w-full h-full object-cover"
-          loop
-          muted
-          playsInline
-          onMouseEnter={() => setIsVideoPlaying(true)}
-          onMouseLeave={() => setIsVideoPlaying(false)}
-          autoPlay={isVideoPlaying}
-        />
+        <div className="relative w-full h-full">
+          <video
+            src={currentUrl}
+            className="w-full h-full object-cover"
+            style={{ aspectRatio: '1080/1350' }}
+            muted
+            playsInline
+          />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="bg-black bg-opacity-50 rounded-full p-3">
+              <Play className="w-8 h-8 text-white" fill="currentColor" />
+            </div>
+          </div>
+        </div>
       ) : (
         <img
           src={currentUrl}
           alt={title}
           className="w-full h-full object-cover"
+          style={{ aspectRatio: '1080/1350' }}
           loading="lazy"
         />
       )}
 
-      {/* Indicateur type de contenu */}
+      {/* Indicateurs */}
       <div className="absolute top-2 right-2">
         {type === 'Carrousel' && urls.length > 1 && (
           <div className="bg-black bg-opacity-50 text-white px-2 py-1 rounded text-xs">
@@ -67,26 +76,26 @@ const MediaDisplay = ({ urls, type, title }) => {
         )}
       </div>
 
-      {/* Navigation carrousel */}
+      {/* Navigation carrousel dans la grille */}
       {type === 'Carrousel' && urls.length > 1 && (
         <>
           <button
             onClick={prevImage}
-            className="absolute left-2 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+            className="absolute left-1 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity z-10"
           >
-            ←
+            <ChevronLeft className="w-4 h-4" />
           </button>
           <button
             onClick={nextImage}
-            className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+            className="absolute right-1 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity z-10"
           >
-            →
+            <ChevronRight className="w-4 h-4" />
           </button>
           <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 flex space-x-1">
             {urls.map((_, index) => (
               <div
                 key={index}
-                className={`w-2 h-2 rounded-full ${
+                className={`w-1.5 h-1.5 rounded-full ${
                   index === currentIndex ? 'bg-white' : 'bg-white bg-opacity-50'
                 }`}
               />
@@ -94,10 +103,120 @@ const MediaDisplay = ({ urls, type, title }) => {
           </div>
         </>
       )}
+
+      {/* Caption au hover */}
+      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-40 transition-all duration-300 flex items-end p-3">
+        <div className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-sm">
+          <p className="font-medium truncate">{title}</p>
+          {caption && <p className="text-xs mt-1 line-clamp-2">{caption}</p>}
+        </div>
+      </div>
     </div>
   );
 };
 
+// Modal pour afficher le détail des posts
+const PostModal = ({ post, isOpen, onClose }) => {
+  const [currentIndex, setCurrentIndex] = useState(0);
+
+  useEffect(() => {
+    if (post) {
+      setCurrentIndex(post.startIndex || 0);
+    }
+  }, [post]);
+
+  if (!isOpen || !post) return null;
+
+  const { urls, type, title, caption } = post;
+
+  const nextMedia = () => {
+    setCurrentIndex((prev) => (prev + 1) % urls.length);
+  };
+
+  const prevMedia = () => {
+    setCurrentIndex((prev) => (prev - 1 + urls.length) % urls.length);
+  };
+
+  const isVideo = (url) => {
+    return url && (url.includes('.mp4') || url.includes('.mov') || url.includes('.webm'));
+  };
+
+  const currentUrl = urls[currentIndex];
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-90 flex items-center justify-center z-50" onClick={onClose}>
+      <div className="relative max-w-2xl max-h-[90vh] bg-white rounded-lg overflow-hidden" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b">
+          <h3 className="font-bold text-lg">{title}</h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-full">
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Media */}
+        <div className="relative">
+          {isVideo(currentUrl) ? (
+            <video
+              src={currentUrl}
+              className="w-full max-h-[60vh] object-contain"
+              controls
+              autoPlay
+              playsInline
+            />
+          ) : (
+            <img
+              src={currentUrl}
+              alt={title}
+              className="w-full max-h-[60vh] object-contain"
+              style={{ aspectRatio: '1080/1350' }}
+            />
+          )}
+
+          {/* Navigation carrousel */}
+          {urls.length > 1 && (
+            <>
+              <button
+                onClick={prevMedia}
+                className="absolute left-4 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 text-white rounded-full p-2"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <button
+                onClick={nextMedia}
+                className="absolute right-4 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 text-white rounded-full p-2"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Footer avec caption */}
+        {caption && (
+          <div className="p-4 border-t">
+            <p className="text-sm text-gray-700">{caption}</p>
+            {urls.length > 1 && (
+              <div className="flex justify-center mt-3 space-x-1">
+                {urls.map((_, index) => (
+                  <div
+                    key={index}
+                    className={`w-2 h-2 rounded-full cursor-pointer ${
+                      index === currentIndex ? 'bg-blue-500' : 'bg-gray-300'
+                    }`}
+                    onClick={() => setCurrentIndex(index)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// Composant principal
 function InstagramNotionWidget() {
   // États du widget
   const [posts, setPosts] = useState([]);
