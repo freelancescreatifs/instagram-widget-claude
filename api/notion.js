@@ -155,13 +155,15 @@ export default async function handler(req, res) {
           const contentProperty = findProperty(['contenu', 'content', 'media', 'fichiers', 'files', 'images']);
           const typeProperty = findProperty(['type', 'category', 'categorie', 'kind']);
           const captionProperty = findProperty(['caption', 'description', 'desc', 'texte', 'text']);
+          const statusProperty = findProperty(['statut', 'status', 'état', 'state']);
 
           console.log('Property mapping:', {
             title: titleProperty,
             date: dateProperty,
             content: contentProperty,
             type: typeProperty,
-            caption: captionProperty
+            caption: captionProperty,
+            status: statusProperty
           });
 
           // Debug spécifique pour la colonne Contenu
@@ -223,6 +225,10 @@ export default async function handler(req, res) {
             const captionProp = captionProperty ? properties[captionProperty] : null;
             const caption = captionProp?.rich_text?.[0]?.plain_text || '';
 
+            // Extraire le statut
+            const statusProp = statusProperty ? properties[statusProperty] : null;
+            const status = statusProp?.select?.name || statusProp?.status?.name || '';
+
             return {
               id: result.id,
               title,
@@ -230,9 +236,15 @@ export default async function handler(req, res) {
               urls: mediaUrls,
               type,
               caption,
+              status,
               hasContent: mediaUrls.length > 0
             };
-          }).filter(post => post.hasContent); // Filtrer les posts sans média
+          }).filter(post => {
+            // Filtrer les posts sans média ET les posts avec statut "Posté"
+            return post.hasContent && 
+                   post.status.toLowerCase() !== 'posté' && 
+                   post.status.toLowerCase() !== 'posted';
+          });
 
           return res.status(200).json({ 
             success: true, 
@@ -246,7 +258,12 @@ export default async function handler(req, res) {
                 date: dateProperty,
                 content: contentProperty,
                 type: typeProperty,
-                caption: captionProperty
+                caption: captionProperty,
+                status: statusProperty
+              },
+              filterInfo: {
+                statusFiltering: statusProperty ? 'Active' : 'Disabled',
+                excludedStatuses: ['Posté', 'Posted']
               }
             }
           });
