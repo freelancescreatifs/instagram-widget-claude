@@ -127,26 +127,34 @@ export default async function handler(req, res) {
           }
 
           const data = await response.json();
+          // Debug information
+          console.log('Total rows in database:', data.results.length);
           console.log('Database properties:', Object.keys(data.results[0]?.properties || {}));
+          
+          // Log first row for debugging
+          if (data.results[0]) {
+            console.log('First row properties:', data.results[0].properties);
+          }
 
           // Analyser les propriétés disponibles
           const sampleResult = data.results[0];
           const availableProperties = sampleResult ? Object.keys(sampleResult.properties) : [];
           
-          // Mapping flexible des colonnes
+          // Mapping flexible des colonnes avec plus d'options
           const findProperty = (possibleNames) => {
-            return possibleNames.find(name => 
-              availableProperties.some(prop => 
-                prop.toLowerCase().includes(name.toLowerCase())
+            return availableProperties.find(prop => 
+              possibleNames.some(name => 
+                prop.toLowerCase().includes(name.toLowerCase()) ||
+                name.toLowerCase().includes(prop.toLowerCase())
               )
             );
           };
 
-          const titleProperty = findProperty(['titre', 'title', 'name', 'nom']);
-          const dateProperty = findProperty(['date', 'publication', 'publish']);
-          const contentProperty = findProperty(['contenu', 'content', 'media', 'fichiers', 'files']);
-          const typeProperty = findProperty(['type', 'category', 'categorie']);
-          const captionProperty = findProperty(['caption', 'description', 'desc', 'texte']);
+          const titleProperty = findProperty(['titre', 'title', 'name', 'nom', 'post']);
+          const dateProperty = findProperty(['date', 'publication', 'publish', 'created']);
+          const contentProperty = findProperty(['contenu', 'content', 'media', 'fichiers', 'files', 'images']);
+          const typeProperty = findProperty(['type', 'category', 'categorie', 'kind']);
+          const captionProperty = findProperty(['caption', 'description', 'desc', 'texte', 'text']);
 
           console.log('Property mapping:', {
             title: titleProperty,
@@ -155,6 +163,25 @@ export default async function handler(req, res) {
             type: typeProperty,
             caption: captionProperty
           });
+
+          // Debug spécifique pour la colonne Contenu
+          const debugContenuColumn = data.results.map((result, index) => {
+            const contentProp = result.properties['Contenu'];
+            return {
+              row: index + 1,
+              title: result.properties['Titre']?.title?.[0]?.plain_text || `Ligne ${index + 1}`,
+              contentType: contentProp?.type,
+              hasFiles: contentProp?.files ? contentProp.files.length > 0 : false,
+              filesCount: contentProp?.files?.length || 0,
+              fileDetails: contentProp?.files?.map(f => ({
+                name: f.name || 'unnamed',
+                type: f.type,
+                hasUrl: !!(f.file?.url || f.external?.url)
+              })) || []
+            };
+          });
+
+          console.log('DEBUG - Colonne Contenu détaillée:', debugContenuColumn);
 
           // Transformer les résultats en format utilisable
           const posts = data.results.map(result => {
@@ -168,10 +195,14 @@ export default async function handler(req, res) {
             const dateProp = dateProperty ? properties[dateProperty] : null;
             const date = dateProp?.date?.start || new Date().toISOString().split('T')[0];
 
-            // Extraire les fichiers média
+            // Extraire les fichiers média avec debug
             const contentProp = contentProperty ? properties[contentProperty] : null;
             const files = contentProp?.files || [];
+            console.log(`Row ${title}: Content property:`, contentProp);
+            console.log(`Row ${title}: Files found:`, files.length);
+            
             const mediaUrls = files.map(file => file.file?.url || file.external?.url).filter(Boolean);
+            console.log(`Row ${title}: Valid URLs:`, mediaUrls.length);
 
             // Extraire le type (ou détecter automatiquement)
             const typeProp = typeProperty ? properties[typeProperty] : null;
@@ -203,15 +234,23 @@ export default async function handler(req, res) {
             };
           }).filter(post => post.hasContent); // Filtrer les posts sans média
 
-          console.log(`Processed ${posts.length} posts with media`);
+          console.log(`Processed ${posts.length} posts with media from ${data.results.length} total rows`);
+          console.log('Posts with media:', posts.map(p => ({ title: p.title, urlCount: p.urls.length })));
 
           return res.status(200).json({ 
             success: true, 
             posts,
-            meta: {
-              total: data.results.length,
-              withMedia: posts.length,
-              properties: availableProperties
+            debug: {
+              totalRows: data.results.length,
+              postsWithMedia: posts.length,
+              availableProperties,
+              mappedProperties: {
+                title: titleProperty,
+                date: dateProperty,
+                content: contentProperty,
+                type: typeProperty,
+                caption: captionProperty
+              }
             }
           });
 
