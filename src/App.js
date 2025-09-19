@@ -4,7 +4,7 @@ import { Camera, Settings, RefreshCw, Edit3, X, ChevronLeft, ChevronRight, Play 
 // Configuration de l'API - Votre domaine Vercel
 const API_BASE = 'https://instagram-widget-claude.vercel.app/api';
 
-// Composant pour afficher les médias avec modal
+// Composant pour afficher les médias avec modal 
 const MediaDisplay = ({ urls, type, title, caption, onOpenModal }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isHovered, setIsHovered] = useState(false);
