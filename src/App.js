@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Camera, Settings, Heart, MessageCircle, MoreHorizontal, RefreshCw, Edit3, Users, UserPlus } from 'lucide-react';
 
-// Configuration de l'API - Remplacez par votre domaine Vercel
-const API_BASE = 'https://instagram-widget-claude-new.vercel.app/api';
+// Configuration de l'API - Votre domaine Vercel
+const API_BASE = 'https://instagram-widget-claude.vercel.app/api';
 
 // Composant pour afficher les médias (images, carrousels, vidéos)
 const MediaDisplay = ({ urls, type, title }) => {
