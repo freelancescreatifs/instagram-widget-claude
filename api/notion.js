@@ -1,217 +1,280 @@
-// api/notion.js - Fichier à créer dans le dossier api/
 export default async function handler(req, res) {
-  // Configuration CORS
+  // Configuration CORS pour éviter les erreurs cross-origin
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   // Répondre aux requêtes OPTIONS (preflight)
   if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+    return res.status(200).end();
   }
 
-  // Seules les requêtes POST sont acceptées
+  // Répondre aux requêtes GET avec un message de test
+  if (req.method === 'GET') {
+    return res.status(405).json({ 
+      error: "Method not allowed", 
+      method: req.method,
+      message: "Use POST to interact with Notion API"
+    });
+  }
+
+  // Traiter seulement les requêtes POST
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed', method: req.method });
+    return res.status(405).json({ error: "Method not allowed", method: req.method });
   }
 
   try {
-    console.log('API Request received:', req.body);
-    
-    const { apiKey, databaseId, action } = req.body;
+    const { action, apiKey, databaseId, postId, newDate } = req.body;
 
-    // Validation des paramètres
-    if (!apiKey || !databaseId || !action) {
+    // Validation de la clé API - NOUVEAU FORMAT NTN_
+    if (!apiKey || (!apiKey.startsWith('ntn_') && !apiKey.startsWith('secret_'))) {
       return res.status(400).json({ 
-        error: 'Missing parameters', 
-        received: { apiKey: !!apiKey, databaseId: !!databaseId, action: !!action }
+        error: "Clé API invalide", 
+        hint: "La clé doit commencer par 'ntn_' (nouveau format) ou 'secret_' (ancien format)",
+        received: apiKey ? `${apiKey.substring(0, 10)}...` : 'null'
       });
     }
 
-    // Validation du format de la clé API
-    if (!apiKey.startsWith('secret_')) {
-      return res.status(400).json({ error: 'Invalid API key format. Must start with "secret_"' });
-    }
-
-    // Validation du format de l'ID
-    if (databaseId.length !== 32) {
-      return res.status(400).json({ error: 'Invalid database ID format. Must be 32 characters' });
-    }
-
-    let notionUrl;
-    let notionOptions;
-
-    if (action === 'test') {
-      // Test de connexion - récupérer info de la base
-      notionUrl = `https://api.notion.com/v1/databases/${databaseId}`;
-      notionOptions = {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Notion-Version': '2022-06-28'
-        }
-      };
-    } else if (action === 'query') {
-      // Récupération des posts
-      notionUrl = `https://api.notion.com/v1/databases/${databaseId}/query`;
-      notionOptions = {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'Notion-Version': '2022-06-28'
-        },
-        body: JSON.stringify({
-          sorts: [{ property: 'Date', direction: 'descending' }]
-        })
-      };
-    } else {
-      return res.status(400).json({ error: 'Invalid action. Use "test" or "query"' });
-    }
-
-    console.log('Calling Notion API:', notionUrl);
-
-    // Appel à l'API Notion
-    const response = await fetch(notionUrl, notionOptions);
-    const data = await response.json();
-
-    console.log('Notion API Response:', response.status, response.ok);
-
-    if (!response.ok) {
-      console.error('Notion API Error:', data);
-      
-      // Messages d'erreur plus clairs
-      let errorMessage = 'Erreur inconnue';
-      
-      if (response.status === 401) {
-        errorMessage = 'Clé API invalide ou expirée';
-      } else if (response.status === 404) {
-        errorMessage = 'Base de données introuvable ou non partagée avec l\'intégration';
-      } else if (response.status === 403) {
-        errorMessage = 'Accès refusé - Vérifiez les permissions de l\'intégration';
-      } else if (data.message) {
-        errorMessage = data.message;
-      }
-
-      return res.status(response.status).json({ 
-        error: errorMessage,
-        notionError: data,
-        status: response.status
+    // Validation de l'ID de base
+    if (!databaseId || databaseId.length !== 32) {
+      return res.status(400).json({ 
+        error: "ID de base invalide", 
+        hint: "L'ID doit faire exactement 32 caractères",
+        received: databaseId ? `${databaseId.length} caractères` : 'null'
       });
     }
 
-    if (action === 'test') {
-      // Réponse pour le test de connexion
-      return res.status(200).json({ 
-        success: true, 
-        message: 'Connexion réussie !',
-        database: {
-          title: data.title?.[0]?.text?.content || 'Base sans nom',
-          id: data.id
-        }
-      });
-    }
-
-    if (action === 'query') {
-      // Traitement des posts
-      console.log('Processing', data.results?.length || 0, 'results');
-
-      const formattedPosts = data.results.map(page => {
-        const properties = page.properties;
-        
-        // Fonction pour rechercher les propriétés de manière flexible
-        const findProperty = (searchTerms, types = []) => {
-          for (const [key, prop] of Object.entries(properties)) {
-            // Recherche par nom (insensible à la casse)
-            if (searchTerms.some(term => key.toLowerCase().includes(term.toLowerCase()))) {
-              return prop;
+    const notionApiUrl = 'https://api.notion.com/v1';
+    
+    switch (action) {
+      case 'test':
+        // Test de connexion simple
+        try {
+          const response = await fetch(`${notionApiUrl}/databases/${databaseId}`, {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Notion-Version': '2022-06-28',
+              'Content-Type': 'application/json'
             }
-            // Recherche par type si spécifié
-            if (types.length > 0 && types.includes(prop.type)) {
-              return prop;
+          });
+
+          if (!response.ok) {
+            const errorData = await response.text();
+            console.error('Notion API Error:', response.status, errorData);
+            
+            if (response.status === 401) {
+              return res.status(401).json({ 
+                error: "Clé API invalide ou expirée",
+                hint: "Vérifiez votre clé API sur notion.so/my-integrations"
+              });
             }
+            if (response.status === 404) {
+              return res.status(404).json({ 
+                error: "Base de données introuvable",
+                hint: "Vérifiez l'ID de la base et que l'intégration a accès à la base"
+              });
+            }
+            
+            return res.status(response.status).json({ 
+              error: "Erreur API Notion", 
+              status: response.status,
+              details: errorData
+            });
           }
-          return null;
-        };
 
-        // Recherche des propriétés
-        const titleProp = findProperty(['titre', 'title', 'nom', 'name']) || 
-                         Object.values(properties).find(p => p.type === 'title');
-        const dateProp = findProperty(['date', 'publication', 'publish']) || 
-                        Object.values(properties).find(p => p.type === 'date');
-        const contentProp = findProperty(['contenu', 'content', 'media', 'fichier', 'file']) || 
-                           Object.values(properties).find(p => p.type === 'files');
-        const typeProp = findProperty(['type', 'format', 'categorie']) || 
-                        Object.values(properties).find(p => p.type === 'select');
-        const captionProp = findProperty(['caption', 'description', 'texte', 'text', 'legende']) || 
-                           Object.values(properties).find(p => p.type === 'rich_text' && p !== titleProp);
+          return res.status(200).json({ 
+            success: true, 
+            message: "Connexion réussie",
+            apiFormat: apiKey.startsWith('ntn_') ? 'nouveau (ntn_)' : 'ancien (secret_)'
+          });
 
-        // Récupération des fichiers
-        const files = contentProp?.files || [];
-        const urls = files.map(file => file.file?.url || file.external?.url).filter(Boolean);
-
-        // Auto-détection du type
-        let autoType = 'image';
-        if (files.length > 1) {
-          autoType = 'carrousel';
-        } else if (files.length === 1 && files[0].name) {
-          const videoExtensions = ['.mp4', '.mov', '.avi', '.webm', '.mkv'];
-          const isVideo = videoExtensions.some(ext => 
-            files[0].name.toLowerCase().includes(ext)
-          );
-          if (isVideo) autoType = 'video';
+        } catch (error) {
+          console.error('Fetch Error:', error);
+          return res.status(500).json({ 
+            error: "Erreur de réseau", 
+            message: error.message 
+          });
         }
 
-        const manualType = typeProp?.select?.name?.toLowerCase();
-        const finalType = manualType || autoType;
-
-        const post = {
-          id: page.id,
-          date: dateProp?.date?.start || new Date().toISOString().split('T')[0],
-          type: finalType,
-          urls: urls,
-          caption: captionProp?.rich_text?.[0]?.text?.content || '',
-          title: titleProp?.title?.[0]?.text?.content || 
-                 titleProp?.rich_text?.[0]?.text?.content || 
-                 'Post sans titre',
-          fileNames: files.map(file => file.name || 'Fichier sans nom'),
-          debug: {
-            propertiesFound: {
-              title: !!titleProp,
-              date: !!dateProp,
-              content: !!contentProp,
-              type: !!typeProp,
-              caption: !!captionProp
+      case 'getPosts':
+        // Récupérer les posts de la base Notion
+        try {
+          const response = await fetch(`${notionApiUrl}/databases/${databaseId}/query`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Notion-Version': '2022-06-28',
+              'Content-Type': 'application/json'
             },
-            filesCount: files.length,
-            allProperties: Object.keys(properties)
+            body: JSON.stringify({
+              sorts: [
+                {
+                  property: "Date",
+                  direction: "descending"
+                }
+              ]
+            })
+          });
+
+          if (!response.ok) {
+            const errorData = await response.text();
+            console.error('Database Query Error:', response.status, errorData);
+            return res.status(response.status).json({ 
+              error: "Impossible de récupérer les posts",
+              details: errorData
+            });
           }
-        };
 
-        console.log(`Post processed: ${post.title}, files: ${files.length}, urls: ${urls.length}`);
-        return post;
-      });
+          const data = await response.json();
+          console.log('Database properties:', Object.keys(data.results[0]?.properties || {}));
 
-      console.log('Formatted posts:', formattedPosts.length);
+          // Analyser les propriétés disponibles
+          const sampleResult = data.results[0];
+          const availableProperties = sampleResult ? Object.keys(sampleResult.properties) : [];
+          
+          // Mapping flexible des colonnes
+          const findProperty = (possibleNames) => {
+            return possibleNames.find(name => 
+              availableProperties.some(prop => 
+                prop.toLowerCase().includes(name.toLowerCase())
+              )
+            );
+          };
 
-      return res.status(200).json({ 
-        success: true, 
-        posts: formattedPosts,
-        count: formattedPosts.length,
-        debug: {
-          totalResults: data.results?.length || 0,
-          processedPosts: formattedPosts.length
+          const titleProperty = findProperty(['titre', 'title', 'name', 'nom']);
+          const dateProperty = findProperty(['date', 'publication', 'publish']);
+          const contentProperty = findProperty(['contenu', 'content', 'media', 'fichiers', 'files']);
+          const typeProperty = findProperty(['type', 'category', 'categorie']);
+          const captionProperty = findProperty(['caption', 'description', 'desc', 'texte']);
+
+          console.log('Property mapping:', {
+            title: titleProperty,
+            date: dateProperty,
+            content: contentProperty,
+            type: typeProperty,
+            caption: captionProperty
+          });
+
+          // Transformer les résultats en format utilisable
+          const posts = data.results.map(result => {
+            const properties = result.properties;
+            
+            // Extraire le titre
+            const titleProp = titleProperty ? properties[titleProperty] : null;
+            const title = titleProp?.title?.[0]?.plain_text || 'Post sans titre';
+
+            // Extraire la date
+            const dateProp = dateProperty ? properties[dateProperty] : null;
+            const date = dateProp?.date?.start || new Date().toISOString().split('T')[0];
+
+            // Extraire les fichiers média
+            const contentProp = contentProperty ? properties[contentProperty] : null;
+            const files = contentProp?.files || [];
+            const mediaUrls = files.map(file => file.file?.url || file.external?.url).filter(Boolean);
+
+            // Extraire le type (ou détecter automatiquement)
+            const typeProp = typeProperty ? properties[typeProperty] : null;
+            let type = typeProp?.select?.name || 'Image';
+            
+            // Auto-détection du type si pas spécifié
+            if (!typeProp && mediaUrls.length > 0) {
+              if (mediaUrls.length > 1) {
+                type = 'Carrousel';
+              } else if (mediaUrls[0]?.includes('.mp4') || mediaUrls[0]?.includes('.mov')) {
+                type = 'Vidéo';
+              } else {
+                type = 'Image';
+              }
+            }
+
+            // Extraire la caption
+            const captionProp = captionProperty ? properties[captionProperty] : null;
+            const caption = captionProp?.rich_text?.[0]?.plain_text || '';
+
+            return {
+              id: result.id,
+              title,
+              date,
+              urls: mediaUrls,
+              type,
+              caption,
+              hasContent: mediaUrls.length > 0
+            };
+          }).filter(post => post.hasContent); // Filtrer les posts sans média
+
+          console.log(`Processed ${posts.length} posts with media`);
+
+          return res.status(200).json({ 
+            success: true, 
+            posts,
+            meta: {
+              total: data.results.length,
+              withMedia: posts.length,
+              properties: availableProperties
+            }
+          });
+
+        } catch (error) {
+          console.error('GetPosts Error:', error);
+          return res.status(500).json({ 
+            error: "Erreur lors de la récupération des posts", 
+            message: error.message 
+          });
         }
-      });
+
+      case 'updateDate':
+        // Mettre à jour la date d'un post (pour le drag & drop)
+        try {
+          const response = await fetch(`${notionApiUrl}/pages/${postId}`, {
+            method: 'PATCH',
+            headers: {
+              'Authorization': `Bearer ${apiKey}`,
+              'Notion-Version': '2022-06-28',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              properties: {
+                "Date": {
+                  date: { start: newDate }
+                }
+              }
+            })
+          });
+
+          if (!response.ok) {
+            const errorData = await response.text();
+            return res.status(response.status).json({ 
+              error: "Impossible de mettre à jour la date", 
+              details: errorData 
+            });
+          }
+
+          return res.status(200).json({ 
+            success: true, 
+            message: "Date mise à jour avec succès" 
+          });
+
+        } catch (error) {
+          console.error('UpdateDate Error:', error);
+          return res.status(500).json({ 
+            error: "Erreur lors de la mise à jour", 
+            message: error.message 
+          });
+        }
+
+      default:
+        return res.status(400).json({ 
+          error: "Action non reconnue", 
+          validActions: ['test', 'getPosts', 'updateDate'] 
+        });
     }
 
   } catch (error) {
-    console.error('Server Error:', error);
+    console.error('Handler Error:', error);
     return res.status(500).json({ 
-      error: 'Erreur serveur', 
-      details: error.message,
-      stack: error.stack
+      error: "Erreur interne du serveur", 
+      message: error.message 
     });
   }
 }
