@@ -7,6 +7,8 @@ const API_BASE = 'https://instagram-widget-claude.vercel.app/api';
 // Composant pour afficher les médias avec modal
 const MediaDisplay = ({ urls, type, title, caption, onOpenModal }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   
   if (!urls || urls.length === 0) {
     return (
@@ -16,6 +18,17 @@ const MediaDisplay = ({ urls, type, title, caption, onOpenModal }) => {
     );
   }
 
+  // Auto-slide pour les carrousels
+  useEffect(() => {
+    if (type === 'Carrousel' && urls.length > 1 && !isHovered && !isPaused) {
+      const interval = setInterval(() => {
+        setCurrentIndex((prev) => (prev + 1) % urls.length);
+      }, 3000); // Change toutes les 3 secondes
+
+      return () => clearInterval(interval);
+    }
+  }, [type, urls.length, isHovered, isPaused, currentIndex]);
+
   const isVideo = (url) => {
     return url && (url.includes('.mp4') || url.includes('.mov') || url.includes('.webm'));
   };
@@ -24,18 +37,34 @@ const MediaDisplay = ({ urls, type, title, caption, onOpenModal }) => {
 
   const nextImage = (e) => {
     e.stopPropagation();
+    setIsPaused(true); // Pause l'auto-slide quand on navigue manuellement
     setCurrentIndex((prev) => (prev + 1) % urls.length);
+    // Reprend l'auto-slide après 5 secondes
+    setTimeout(() => setIsPaused(false), 5000);
   };
 
   const prevImage = (e) => {
     e.stopPropagation();
+    setIsPaused(true); // Pause l'auto-slide quand on navigue manuellement
     setCurrentIndex((prev) => (prev - 1 + urls.length) % urls.length);
+    // Reprend l'auto-slide après 5 secondes
+    setTimeout(() => setIsPaused(false), 5000);
+  };
+
+  const goToSlide = (index, e) => {
+    e.stopPropagation();
+    setIsPaused(true); // Pause l'auto-slide
+    setCurrentIndex(index);
+    // Reprend l'auto-slide après 5 secondes
+    setTimeout(() => setIsPaused(false), 5000);
   };
 
   return (
     <div 
       className="relative w-full h-full group cursor-pointer"
       onClick={() => onOpenModal && onOpenModal({ urls, type, title, caption, startIndex: currentIndex })}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
     >
       {isVideo(currentUrl) ? (
         <div className="relative w-full h-full">
@@ -104,7 +133,7 @@ const MediaDisplay = ({ urls, type, title, caption, onOpenModal }) => {
         )}
       </div>
 
-      {/* Navigation carrousel améliorée - Toujours visible pour carrousels */}
+      {/* Navigation carrousel améliorée avec auto-slide */}
       {type === 'Carrousel' && urls.length > 1 && (
         <>
           {/* Flèches de navigation - Visibles par défaut, plus visibles au hover */}
@@ -126,10 +155,7 @@ const MediaDisplay = ({ urls, type, title, caption, onOpenModal }) => {
             {urls.map((_, index) => (
               <button
                 key={index}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setCurrentIndex(index);
-                }}
+                onClick={(e) => goToSlide(index, e)}
                 className={`w-2 h-2 rounded-full transition-all ${
                   index === currentIndex 
                     ? 'bg-white scale-110' 
@@ -139,10 +165,26 @@ const MediaDisplay = ({ urls, type, title, caption, onOpenModal }) => {
             ))}
           </div>
           
-          {/* Indicateur de page actuelle en haut */}
-          <div className="absolute top-2 left-2 bg-black bg-opacity-60 text-white px-2 py-0.5 rounded-full text-xs">
-            {currentIndex + 1}/{urls.length}
+          {/* Indicateur de page actuelle en haut avec état auto-slide */}
+          <div className="absolute top-2 left-2 bg-black bg-opacity-60 text-white px-2 py-0.5 rounded-full text-xs flex items-center space-x-1">
+            <span>{currentIndex + 1}/{urls.length}</span>
+            {!isPaused && !isHovered && (
+              <div className="w-1 h-1 bg-white rounded-full animate-pulse"></div>
+            )}
           </div>
+
+          {/* Barre de progression pour l'auto-slide */}
+          {type === 'Carrousel' && !isPaused && !isHovered && (
+            <div className="absolute bottom-0 left-0 w-full h-0.5 bg-black bg-opacity-20">
+              <div 
+                className="h-full bg-white transition-all duration-300 ease-linear"
+                style={{
+                  width: '100%',
+                  animation: 'slideProgress 3s linear infinite'
+                }}
+              ></div>
+            </div>
+          )}
         </>
       )}
 
@@ -153,6 +195,14 @@ const MediaDisplay = ({ urls, type, title, caption, onOpenModal }) => {
           {caption && <p className="text-xs mt-1 line-clamp-2">{caption}</p>}
         </div>
       </div>
+
+      {/* CSS pour l'animation de la barre de progression */}
+      <style jsx>{`
+        @keyframes slideProgress {
+          from { transform: translateX(-100%); }
+          to { transform: translateX(0%); }
+        }
+      `}</style>
     </div>
   );
 };
