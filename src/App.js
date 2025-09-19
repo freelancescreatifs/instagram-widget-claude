@@ -69,19 +69,36 @@ const MediaDisplay = ({ urls, type, title, caption, onOpenModal }) => {
         />
       )}
 
-      {/* Icônes Instagram authentiques en haut à droite */}
+      {/* Icônes Instagram authentiques en haut à droite - Style discret */}
       <div className="absolute top-2 right-2 flex space-x-1">
         {type === 'Carrousel' && urls.length > 1 && (
-          <div className="bg-black bg-opacity-60 text-white px-1.5 py-0.5 rounded-full text-xs flex items-center">
-            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M3 7.5h4v9H3v-9zm5 0h4v9H8v-9zm5 0h4v9h-4v-9z"/>
+          <div className="flex items-center justify-center w-6 h-6">
+            {/* Icône carrousel - Multiple rectangles */}
+            <svg 
+              className="w-4 h-4 text-white drop-shadow-md" 
+              fill="none" 
+              stroke="currentColor" 
+              strokeWidth="2" 
+              viewBox="0 0 24 24"
+            >
+              <rect x="3" y="6" width="4" height="12" rx="1" />
+              <rect x="10" y="6" width="4" height="12" rx="1" />
+              <rect x="17" y="6" width="4" height="12" rx="1" />
             </svg>
           </div>
         )}
         {type === 'Vidéo' && (
-          <div className="bg-black bg-opacity-60 text-white px-1.5 py-0.5 rounded-full text-xs flex items-center">
-            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M8 5v14l11-7z"/>
+          <div className="flex items-center justify-center w-6 h-6">
+            {/* Icône vidéo - Caméra */}
+            <svg 
+              className="w-4 h-4 text-white drop-shadow-md" 
+              fill="none" 
+              stroke="currentColor" 
+              strokeWidth="2" 
+              viewBox="0 0 24 24"
+            >
+              <path d="M23 7l-7 5 7 5V7z"/>
+              <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
             </svg>
           </div>
         )}
