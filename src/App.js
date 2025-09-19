@@ -42,7 +42,7 @@ const MediaDisplay = ({ urls, type, title, caption, onOpenModal }) => {
           <video
             src={currentUrl}
             className="w-full h-full object-cover"
-            style={{ aspectRatio: '1080/1350' }}
+            style={{ aspectRatio: '1080/1350', objectFit: 'cover', width: '100%', height: '100%' }}
             muted
             playsInline
           />
@@ -57,55 +57,80 @@ const MediaDisplay = ({ urls, type, title, caption, onOpenModal }) => {
           src={currentUrl}
           alt={title}
           className="w-full h-full object-cover"
-          style={{ aspectRatio: '1080/1350' }}
+          style={{ 
+            aspectRatio: '1080/1350', 
+            objectFit: 'cover', 
+            width: '100%', 
+            height: '100%',
+            minHeight: '100%',
+            minWidth: '100%'
+          }}
           loading="lazy"
         />
       )}
 
-      {/* Indicateurs */}
-      <div className="absolute top-2 right-2">
+      {/* Icônes Instagram authentiques en haut à droite */}
+      <div className="absolute top-2 right-2 flex space-x-1">
         {type === 'Carrousel' && urls.length > 1 && (
-          <div className="bg-black bg-opacity-50 text-white px-2 py-1 rounded text-xs">
-            ⋯
+          <div className="bg-black bg-opacity-60 text-white px-1.5 py-0.5 rounded-full text-xs flex items-center">
+            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M3 7.5h4v9H3v-9zm5 0h4v9H8v-9zm5 0h4v9h-4v-9z"/>
+            </svg>
           </div>
         )}
         {type === 'Vidéo' && (
-          <div className="bg-black bg-opacity-50 text-white px-2 py-1 rounded text-xs">
-            ▶️
+          <div className="bg-black bg-opacity-60 text-white px-1.5 py-0.5 rounded-full text-xs flex items-center">
+            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z"/>
+            </svg>
           </div>
         )}
       </div>
 
-      {/* Navigation carrousel dans la grille */}
+      {/* Navigation carrousel améliorée - Toujours visible pour carrousels */}
       {type === 'Carrousel' && urls.length > 1 && (
         <>
+          {/* Flèches de navigation - Visibles par défaut, plus visibles au hover */}
           <button
             onClick={prevImage}
-            className="absolute left-1 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+            className="absolute left-1 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-40 group-hover:bg-opacity-70 text-white rounded-full p-1.5 transition-all z-20 shadow-lg"
           >
             <ChevronLeft className="w-4 h-4" />
           </button>
           <button
             onClick={nextImage}
-            className="absolute right-1 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-50 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+            className="absolute right-1 top-1/2 transform -translate-y-1/2 bg-black bg-opacity-40 group-hover:bg-opacity-70 text-white rounded-full p-1.5 transition-all z-20 shadow-lg"
           >
             <ChevronRight className="w-4 h-4" />
           </button>
+          
+          {/* Points de navigation en bas - Toujours visibles */}
           <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 flex space-x-1">
             {urls.map((_, index) => (
-              <div
+              <button
                 key={index}
-                className={`w-1.5 h-1.5 rounded-full ${
-                  index === currentIndex ? 'bg-white' : 'bg-white bg-opacity-50'
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setCurrentIndex(index);
+                }}
+                className={`w-2 h-2 rounded-full transition-all ${
+                  index === currentIndex 
+                    ? 'bg-white scale-110' 
+                    : 'bg-white bg-opacity-60 hover:bg-opacity-80'
                 }`}
               />
             ))}
+          </div>
+          
+          {/* Indicateur de page actuelle en haut */}
+          <div className="absolute top-2 left-2 bg-black bg-opacity-60 text-white px-2 py-0.5 rounded-full text-xs">
+            {currentIndex + 1}/{urls.length}
           </div>
         </>
       )}
 
       {/* Caption au hover */}
-      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-40 transition-all duration-300 flex items-end p-3">
+      <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all duration-300 flex items-end p-3">
         <div className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-sm">
           <p className="font-medium truncate">{title}</p>
           {caption && <p className="text-xs mt-1 line-clamp-2">{caption}</p>}
@@ -250,7 +275,7 @@ function InstagramNotionWidget() {
   const [editMode, setEditMode] = useState(false);
   const [tempProfile, setTempProfile] = useState(profile);
 
-  // Données mockées pour la démonstration
+  // Données mockées pour la démonstration - TOUTES au format 1080x1350
   const mockPosts = [
     {
       id: '1',
@@ -258,7 +283,8 @@ function InstagramNotionWidget() {
       date: '2024-09-20',
       urls: ['https://picsum.photos/1080/1350?random=10'],
       type: 'Image',
-      caption: '☕ Perfect start to the day!'
+      caption: '☕ Perfect start to the day!',
+      status: 'Programmé'
     },
     {
       id: '2',
@@ -270,7 +296,8 @@ function InstagramNotionWidget() {
         'https://picsum.photos/1080/1350?random=13'
       ],
       type: 'Carrousel',
-      caption: '🏖️ Souvenirs inoubliables de mes vacances'
+      caption: '🏖️ Souvenirs inoubliables de mes vacances',
+      status: 'Brouillon'
     },
     {
       id: '3',
@@ -278,9 +305,40 @@ function InstagramNotionWidget() {
       date: '2024-09-18',
       urls: ['https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4'],
       type: 'Vidéo',
-      caption: '🎬 Nouveau contenu disponible !'
+      caption: '🎬 Nouveau contenu disponible !',
+      status: 'À publier'
+    },
+    {
+      id: '4',
+      title: 'Sunset vibes',
+      date: '2024-09-17',
+      urls: ['https://picsum.photos/1080/1350?random=14'],
+      type: 'Image',
+      caption: '🌅 Golden hour magic',
+      status: 'Programmé'
+    },
+    {
+      id: '5',
+      title: 'Collection mode',
+      date: '2024-09-16',
+      urls: [
+        'https://picsum.photos/1080/1350?random=15',
+        'https://picsum.photos/1080/1350?random=16'
+      ],
+      type: 'Carrousel',
+      caption: '👗 Nouvelle collection automne',
+      status: 'Brouillon'
+    },
+    {
+      id: '6',
+      title: 'Nature walk',
+      date: '2024-09-15',
+      urls: ['https://picsum.photos/1080/1350?random=17'],
+      type: 'Image',
+      caption: '🌿 Reconnexion avec la nature',
+      status: 'À publier'
     }
-  ];
+  ].filter(post => post.status.toLowerCase() !== 'posté' && post.status.toLowerCase() !== 'posted');
 
   // Charger la configuration depuis localStorage
   useEffect(() => {
@@ -390,7 +448,10 @@ function InstagramNotionWidget() {
         setPosts(data.posts || []);
         setConnectionStatus('connected');
         // Message simplifié selon la demande
-        setError(`✅ Connecté à Notion • ${data.posts?.length || 0}/${data.debug?.totalRows || data.posts?.length || 0} post(s)`);
+        const totalPosts = data.posts?.length || 0;
+        const totalRows = data.debug?.totalRows || totalPosts;
+        const statusFilter = data.debug?.filterInfo?.statusFiltering === 'Active' ? ' (hors "Posté")' : '';
+        setError(`✅ Connecté à Notion • ${totalPosts}/${totalRows} post(s)${statusFilter}`);
       } else {
         setError(data.error || 'Erreur lors du chargement des posts');
         setPosts(mockPosts); // Fallback vers les données mockées
@@ -529,7 +590,11 @@ function InstagramNotionWidget() {
     if (originalUrl.includes('picsum.photos')) {
       return originalUrl.replace(/\/\d+\/\d+/, '/1080/1350');
     }
-    // Pour les autres URLs, on garde l'originale (la CSS s'occupe du redimensionnement)
+    // Pour toutes les autres URLs, on ajoute des paramètres de redimensionnement si possible
+    if (originalUrl.includes('unsplash.com')) {
+      return `${originalUrl}?w=1080&h=1350&fit=crop`;
+    }
+    // Pour les URLs génériques, on garde l'originale mais on force le ratio en CSS
     return originalUrl;
   };
 
@@ -882,17 +947,21 @@ function InstagramNotionWidget() {
         </div>
       </div>
 
-      {/* Grille de posts 3x4 avec drag & drop amélioré */}
-      <div className="grid grid-cols-3 gap-1 aspect-square">
+      {/* Grille de posts 3x4 avec drag & drop amélioré - Format 1080x1350 forcé */}
+      <div className="grid grid-cols-3 gap-1">
         {gridPosts.map((post, index) => (
           <div
             key={post?.id || `empty-${index}`}
-            className="aspect-[4/5] bg-gray-100 relative group overflow-hidden"
+            className="relative group overflow-hidden bg-gray-100"
             draggable={!!post}
             onDragStart={(e) => post && handleDragStart(e, post)}
             onDrop={(e) => handleDrop(e, index)}
             onDragOver={handleDragOver}
-            style={{ aspectRatio: '1080/1350' }}
+            style={{ 
+              aspectRatio: '1080/1350',
+              width: '100%',
+              height: 'auto'
+            }}
           >
             {post ? (
               <MediaDisplay 
@@ -903,7 +972,7 @@ function InstagramNotionWidget() {
                 onOpenModal={openModal}
               />
             ) : (
-              <div className="w-full h-full flex items-center justify-center text-gray-400">
+              <div className="w-full h-full flex items-center justify-center text-gray-400" style={{ aspectRatio: '1080/1350' }}>
                 <Camera className="w-8 h-8" />
               </div>
             )}
