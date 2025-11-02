@@ -1,12 +1,6 @@
 // App.jsx (ou App.js)
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Camera, Settings, RefreshCw, Edit3, X, ChevronLeft, ChevronRight, Play, Plus, ChevronDown, Calendar } from 'lucide-react';
-
-/**
- * ✅ Nouveau domaine (embed public)
- * Exemple d'embed isolé : instagram-widget-claude.vercel.app/?wid=client-a
- */
-const APP_BASE = 'https://instagram-widget-claude.vercel.app/';
 
 /**
  * ✅ API backend
@@ -38,7 +32,7 @@ const getSessionId = () => {
   }
 };
 
-// 3) ID "effectif" : priorité à ?wid / #wid (et STOP là si présent), puis nom manuel, puis session
+// 3) ID "effectif" : priorité à ?wid / #wid (et STOP là si présent)
 const getEffectiveWidgetId = () => {
   const urlWid = getWidFromUrl();
   if (urlWid) return `wid_${urlWid}`;  // ✅ STOP ICI si wid dans URL
@@ -47,29 +41,6 @@ const getEffectiveWidgetId = () => {
   const named = localStorage.getItem('widget_custom_name');
   if (named && named.trim()) return named.trim();
   return `session_${getSessionId()}`;
-};
-
-const WIDGET_ID = getEffectiveWidgetId();
-
-// Helpers de storage namespacés
-const getStorageKey = (key) => `igw:${WIDGET_ID}:${key}`;
-
-const getLocalStorage = (key, defaultValue = null) => {
-  try {
-    const value = localStorage.getItem(getStorageKey(key));
-    return value ? JSON.parse(value) : defaultValue;
-  } catch (e) {
-    console.error('Erreur lecture localStorage:', e);
-    return defaultValue;
-  }
-};
-
-const setLocalStorage = (key, value) => {
-  try {
-    localStorage.setItem(getStorageKey(key), JSON.stringify(value));
-  } catch (e) {
-    console.error('Erreur écriture localStorage:', e);
-  }
 };
 
 /* ------------------------------ Utilitaires ------------------------------ */
@@ -251,10 +222,34 @@ const PostModal = ({ post, isOpen, onClose, onNavigate }) => {
 /* ------------------------------ Composant App ----------------------------- */
 
 const InstagramNotionWidget = () => {
+  // ✅ WIDGET_ID calculé dynamiquement à chaque render
+  const WIDGET_ID = useMemo(() => getEffectiveWidgetId(), []);
+  
+  // Helpers de storage namespacés (recalculés avec le bon WIDGET_ID)
+  const getStorageKey = (key) => `igw:${WIDGET_ID}:${key}`;
+
+  const getLocalStorage = (key, defaultValue = null) => {
+    try {
+      const value = localStorage.getItem(getStorageKey(key));
+      return value ? JSON.parse(value) : defaultValue;
+    } catch (e) {
+      console.error('Erreur lecture localStorage:', e);
+      return defaultValue;
+    }
+  };
+
+  const setLocalStorage = (key, value) => {
+    try {
+      localStorage.setItem(getStorageKey(key), JSON.stringify(value));
+    } catch (e) {
+      console.error('Erreur écriture localStorage:', e);
+    }
+  };
+
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isProfileEdit, setIsProfileEdit] = useState(false);
   const [notionApiKey, setNotionApiKey] = useState('');
-  const [widgetName, setWidgetName] = useState(''); // Nom personnalisé (option)
+  const [widgetName, setWidgetName] = useState('');
 
   // Multi-calendriers
   const [calendars, setCalendars] = useState([]);
@@ -324,25 +319,26 @@ const InstagramNotionWidget = () => {
       setCalendars(savedCalendars);
       setActiveCalendar(savedActiveCalendar);
       loadAllCalendarsPosts(savedApiKey, savedCalendars);
-      setTimeout(() => showNotification(`✅ Widget chargé - ${savedCalendars.length} calendrier(s)`, 'success'), 500);
+      setTimeout(() => showNotification(`✅ Widget "${WIDGET_ID}" chargé`, 'success'), 500);
     } else if (savedApiKey) {
       setTimeout(() => showNotification('⚙️ Ajoutez un calendrier pour commencer', 'info'), 500);
     }
 
     if (savedProfiles) setProfiles(savedProfiles);
     if (savedShowAllTab !== null) setShowAllTab(savedShowAllTab);
-    if (savedAccounts) {
+    if (savedAccounts && savedAccounts.length > 0) {
       setAccounts(savedAccounts);
-      if (savedAccounts.length > 0 && activeAccount === 'All') setActiveAccount(savedAccounts[0]);
+      if (activeAccount === 'All') setActiveAccount(savedAccounts[0]);
     }
 
-    console.log('📊 Widget Stats:', {
+    console.log('📊 Widget Chargé:', {
       widgetId: WIDGET_ID,
       widFromUrl: getWidFromUrl(),
       calendars: savedCalendars.length,
       accounts: savedAccounts.length,
+      storageKeys: Object.keys(localStorage).filter(k => k.includes(WIDGET_ID))
     });
-  }, []);
+  }, [WIDGET_ID]);
 
   /* ------------------------- Chargement des posts ------------------------- */
 
@@ -464,26 +460,25 @@ const InstagramNotionWidget = () => {
     setIsConfigOpen(false);
   };
 
-  // ✅ Sauvegarde/rename du nom de widget (gère isolation pour ?wid=)
+  // ✅ Sauvegarde/rename du nom de widget
   const saveWidgetName = () => {
     if (!widgetName.trim()) return showNotification('⚠️ Veuillez entrer un nom pour le widget', 'error');
 
-    // ✅ Si on a un ?wid= dans l'URL, on sauvegarde juste le nom d'affichage (isolé)
     const urlWid = getWidFromUrl();
     if (urlWid) {
-      setLocalStorage('displayName', widgetName);  // Sauvegarde isolée
+      // Avec ?wid= : sauvegarde isolée seulement
+      setLocalStorage('displayName', widgetName);
       showNotification(`✅ Nom du widget: "${widgetName}"`, 'success');
-      return;  // PAS de reload, PAS de migration
+      return;
     }
 
-    // Sinon (pas de wid), comportement normal avec migration
+    // Sans ?wid= : comportement normal avec migration
     const allKeys = Object.keys(localStorage);
     const conflict = allKeys.some(k => k.startsWith(`${widgetName}_`) || k.startsWith(`igw:${widgetName}:`));
     if (conflict && widgetName !== WIDGET_ID) {
-      return showNotification('❌ Ce nom est déjà utilisé par un autre widget', 'error');
+      return showNotification('❌ Ce nom est déjà utilisé', 'error');
     }
 
-    // Migration des clés locales si on renomme
     const oldPrefix1 = `${WIDGET_ID}_`;
     const oldPrefix2 = `igw:${WIDGET_ID}:`;
     const toMigrate = [];
@@ -502,7 +497,6 @@ const InstagramNotionWidget = () => {
 
     localStorage.setItem('widget_custom_name', widgetName);
 
-    // Nettoyage des anciennes clés si WIDGET_ID était généré
     if (WIDGET_ID.startsWith('session_') || WIDGET_ID.startsWith('wid_')) {
       toMigrate.forEach(k => localStorage.removeItem(k));
     }
@@ -512,7 +506,7 @@ const InstagramNotionWidget = () => {
   };
 
   const resetWidget = () => {
-    if (!window.confirm('⚠️ Réinitialiser ce widget ? (n'affecte pas Notion)')) return;
+    if (!window.confirm('⚠️ Réinitialiser ce widget ?')) return;
     try {
       const prefix1 = `${WIDGET_ID}_`;
       const prefix2 = `igw:${WIDGET_ID}:`;
@@ -532,14 +526,14 @@ const InstagramNotionWidget = () => {
   };
 
   const createNewWidget = () => {
-    if (!window.confirm('🆕 Créer un nouveau widget indépendant ?')) return;
+    if (!window.confirm('🆕 Créer un nouveau widget ?')) return;
     try {
-      localStorage.removeItem('widget_custom_name'); // force un nouvel ID effectif
-      showNotification('Nouveau widget créé ! Donne-lui un nom…', 'success');
+      localStorage.removeItem('widget_custom_name');
+      showNotification('Nouveau widget créé !', 'success');
       setTimeout(() => window.location.reload(), 600);
     } catch (e) {
       console.error(e);
-      showNotification('Erreur lors de la création', 'error');
+      showNotification('Erreur', 'error');
     }
   };
 
@@ -1060,7 +1054,7 @@ const InstagramNotionWidget = () => {
         </div>
       )}
 
-      {/* Config Modal */}
+      {/* Config Modal - SUITE DANS LE PROCHAIN MESSAGE */}
       {isConfigOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto" onClick={() => setIsConfigOpen(false)}>
           <div className="bg-white rounded-lg max-w-2xl w-full my-8" onClick={e => e.stopPropagation()}>
@@ -1081,9 +1075,9 @@ const InstagramNotionWidget = () => {
                   <div className="flex-1">
                     <h4 className="font-medium text-blue-900 mb-1">Informations du Widget</h4>
                     <div className="text-sm text-blue-800 space-y-1">
-                      <p><strong>ID Widget:</strong> <code className="bg-blue-100 px-2 py-0.5 rounded">{WIDGET_ID}</code></p>
+                      <p><strong>ID Widget:</strong> <code className="bg-blue-100 px-2 py-0.5 rounded text-xs">{WIDGET_ID}</code></p>
                       {getWidFromUrl() && (
-                        <p className="text-xs text-blue-600">✅ Widget isolé via URL (?wid={getWidFromUrl()})</p>
+                        <p className="text-xs text-green-600 font-medium">✅ Widget isolé via URL (?wid={getWidFromUrl()})</p>
                       )}
                     </div>
                   </div>
