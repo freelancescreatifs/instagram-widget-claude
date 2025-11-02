@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Camera, Settings, RefreshCw, Edit3, X, ChevronLeft, ChevronRight, Play, Plus, ChevronDown, Calendar } from 'lucide-react';
 
-const API_BASE = 'https://freelance-creatif.vercel.app/api';
+const API_BASE = 'https://instagram-widget-claude.vercel.app/api';
 
 // Génération d'un ID unique pour chaque instance du widget
 const generateWidgetId = () => {
