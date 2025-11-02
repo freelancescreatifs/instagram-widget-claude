@@ -1,32 +1,42 @@
 import React, { useState, useEffect } from 'react';
 import { Camera, Settings, RefreshCw, Edit3, X, ChevronLeft, ChevronRight, Play, Plus, ChevronDown, Calendar } from 'lucide-react';
 
-const API_BASE = 'https://instagram-widget-claude.vercel.app/api';
+const API_BASE = 'https://freelance-creatif.vercel.app/api';
 
 // Génération d'un ID unique pour chaque instance du widget
 const generateWidgetId = () => {
   const timestamp = Date.now();
-  const random = Math.random().toString(36).substring(2, 15);
+  const random = Math.random().toString(36).substring(2, 10);
   return `widget_${timestamp}_${random}`;
 };
 
-// Récupération ou création de l'ID du widget
-const getWidgetId = () => {
-  // Chercher un ID existant dans le DOM (data-attribute)
-  const widgetRoot = document.getElementById('root');
-  if (widgetRoot && widgetRoot.dataset.widgetId) {
-    return widgetRoot.dataset.widgetId;
-  }
+// Récupération ou création de l'ID du widget STABLE
+const getStableWidgetId = () => {
+  // Clé fixe pour stocker l'ID du widget (NON préfixée pour éviter le cercle vicieux)
+  const WIDGET_ID_STORAGE_KEY = 'instagram_widget_stable_id';
   
-  // Sinon, créer un nouvel ID et le sauvegarder
-  const newId = generateWidgetId();
-  if (widgetRoot) {
-    widgetRoot.dataset.widgetId = newId;
+  try {
+    // Essayer de récupérer l'ID existant depuis localStorage
+    let widgetId = localStorage.getItem(WIDGET_ID_STORAGE_KEY);
+    
+    // Si pas d'ID existant, en créer un nouveau et le sauvegarder
+    if (!widgetId) {
+      widgetId = generateWidgetId();
+      localStorage.setItem(WIDGET_ID_STORAGE_KEY, widgetId);
+      console.log('✨ Nouveau widget créé avec ID:', widgetId);
+    } else {
+      console.log('✅ Widget existant chargé avec ID:', widgetId);
+    }
+    
+    return widgetId;
+  } catch (e) {
+    console.error('Erreur lors de la récupération du Widget ID:', e);
+    // Fallback : utiliser un ID basé uniquement sur le timestamp
+    return `widget_fallback_${Date.now()}`;
   }
-  return newId;
 };
 
-const WIDGET_ID = getWidgetId();
+const WIDGET_ID = getStableWidgetId();
 
 // Fonctions utilitaires pour localStorage avec isolation par widget
 const getStorageKey = (key) => `${WIDGET_ID}_${key}`;
@@ -338,6 +348,9 @@ const InstagramNotionWidget = () => {
     const savedAccounts = getLocalStorage('instagramAccounts', []);
     const savedShowAllTab = getLocalStorage('showAllTab', true);
     
+    // Message de confirmation du chargement
+    const isConfigured = savedApiKey && savedCalendars.length > 0;
+    
     if (savedApiKey) setNotionApiKey(savedApiKey);
     
     // Charger les calendriers
@@ -347,6 +360,16 @@ const InstagramNotionWidget = () => {
       
       // Charger les posts de tous les calendriers
       loadAllCalendarsPosts(savedApiKey, savedCalendars);
+      
+      // Message de confirmation
+      setTimeout(() => {
+        showNotification(`✅ Widget chargé - ${savedCalendars.length} calendrier(s)`, 'success');
+      }, 500);
+    } else if (savedApiKey) {
+      // API configurée mais pas de calendrier
+      setTimeout(() => {
+        showNotification('⚙️ Ajoutez un calendrier pour commencer', 'info');
+      }, 500);
     }
     
     if (savedProfiles) {
@@ -363,6 +386,14 @@ const InstagramNotionWidget = () => {
         setActiveAccount(savedAccounts[0]);
       }
     }
+    
+    // Log pour debug
+    console.log('📊 Widget Stats:', {
+      widgetId: WIDGET_ID,
+      calendars: savedCalendars.length,
+      accounts: savedAccounts.length,
+      configured: isConfigured
+    });
   }, []);
 
   // Charger les posts de tous les calendriers
@@ -525,6 +556,54 @@ const InstagramNotionWidget = () => {
     
     await loadAllCalendarsPosts();
     setIsConfigOpen(false);
+  };
+
+  // Fonction pour réinitialiser complètement le widget
+  const resetWidget = () => {
+    if (window.confirm('⚠️ Êtes-vous sûr de vouloir réinitialiser ce widget ?\n\nToutes les données seront effacées (API, calendriers, comptes, profils).\n\nVos données Notion ne seront PAS affectées.')) {
+      try {
+        // Supprimer toutes les clés préfixées de ce widget
+        const keysToRemove = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith(WIDGET_ID)) {
+            keysToRemove.push(key);
+          }
+        }
+        
+        keysToRemove.forEach(key => localStorage.removeItem(key));
+        
+        showNotification('Widget réinitialisé avec succès', 'success');
+        
+        // Recharger la page après 1 seconde
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
+      } catch (e) {
+        console.error('Erreur lors de la réinitialisation:', e);
+        showNotification('Erreur lors de la réinitialisation', 'error');
+      }
+    }
+  };
+
+  // Fonction pour créer un nouveau widget indépendant
+  const createNewWidget = () => {
+    if (window.confirm('🆕 Créer un nouveau widget indépendant ?\n\nCela va :\n1. Créer un nouveau widget avec un nouvel ID\n2. Conserver l\'ancien widget intact\n\nVous pourrez basculer entre les deux en utilisant des onglets différents de votre navigateur.')) {
+      try {
+        // Supprimer l'ID stable pour forcer la création d'un nouveau
+        localStorage.removeItem('instagram_widget_stable_id');
+        
+        showNotification('Nouveau widget créé ! Rechargement...', 'success');
+        
+        // Recharger la page après 1 seconde
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
+      } catch (e) {
+        console.error('Erreur lors de la création:', e);
+        showNotification('Erreur lors de la création', 'error');
+      }
+    }
   };
 
   const getProfile = (account) => {
@@ -1208,6 +1287,28 @@ const InstagramNotionWidget = () => {
               >
                 Connecter à Notion
               </button>
+
+              <div className="pt-4 border-t space-y-2">
+                <p className="text-xs text-gray-500 mb-2">⚙️ Gestion du widget</p>
+                
+                <button
+                  onClick={createNewWidget}
+                  className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors text-sm"
+                >
+                  🆕 Créer un Nouveau Widget
+                </button>
+                
+                <button
+                  onClick={resetWidget}
+                  className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors text-sm"
+                >
+                  🔄 Réinitialiser ce Widget
+                </button>
+                
+                <p className="text-xs text-gray-400 mt-2">
+                  💡 ID de ce widget : <code className="bg-gray-100 px-1 py-0.5 rounded text-xs">{WIDGET_ID.slice(0, 20)}...</code>
+                </p>
+              </div>
             </div>
           </div>
         </div>
