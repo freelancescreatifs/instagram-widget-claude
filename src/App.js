@@ -6,12 +6,12 @@ import { Camera, Settings, RefreshCw, Edit3, X, ChevronLeft, ChevronRight, Play,
  * ✅ Nouveau domaine (embed public)
  * Exemple d’embed isolé : instagram-widget-claude.vercel.app/?wid=client-a
  */
-const APP_BASE = 'https://freelance-creatif.vercel.app/';
+const APP_BASE = 'instagram-widget-claude.vercel.app/';
 
 /**
  * ✅ API backend (inchangé)
  */
-const API_BASE = 'https://freelance-creatif.vercel.app/api';
+const API_BASE = 'instagram-widget-claude.vercel.app/api';
 
 /* -------------------------- Isolation par widget -------------------------- */
 
