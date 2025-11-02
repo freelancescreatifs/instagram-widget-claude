@@ -4,14 +4,14 @@ import { Camera, Settings, RefreshCw, Edit3, X, ChevronLeft, ChevronRight, Play,
 
 /**
  * ✅ Nouveau domaine (embed public)
- * Exemple d’embed isolé : instagram-widget-claude.vercel.app/?wid=client-a
+ * Exemple d'embed isolé : instagram-widget-claude.vercel.app/?wid=client-a
  */
-const APP_BASE = 'instagram-widget-claude.vercel.app/';
+const APP_BASE = 'https://instagram-widget-claude.vercel.app/';
 
 /**
- * ✅ API backend (inchangé)
+ * ✅ API backend
  */
-const API_BASE = 'instagram-widget-claude.vercel.app/api';
+const API_BASE = 'https://instagram-widget-claude.vercel.app/api';
 
 /* -------------------------- Isolation par widget -------------------------- */
 
@@ -26,7 +26,7 @@ const getWidFromUrl = () => {
   }
 };
 
-// 2) Fallback session si pas de wid explicite (persiste tant que l’onglet vit)
+// 2) Fallback session si pas de wid explicite (persiste tant que l'onglet vit)
 const getSessionId = () => {
   try {
     if (!window.name) {
@@ -38,10 +38,12 @@ const getSessionId = () => {
   }
 };
 
-// 3) ID “effectif” : priorité à ?wid / #wid, puis nom manuel, puis session
+// 3) ID "effectif" : priorité à ?wid / #wid (et STOP là si présent), puis nom manuel, puis session
 const getEffectiveWidgetId = () => {
   const urlWid = getWidFromUrl();
-  if (urlWid) return `wid_${urlWid}`;
+  if (urlWid) return `wid_${urlWid}`;  // ✅ STOP ICI si wid dans URL
+  
+  // Seulement si PAS de wid dans l'URL :
   const named = localStorage.getItem('widget_custom_name');
   if (named && named.trim()) return named.trim();
   return `session_${getSessionId()}`;
@@ -308,7 +310,12 @@ const InstagramNotionWidget = () => {
     const savedProfiles = getLocalStorage('instagramProfiles', null);
     const savedAccounts = getLocalStorage('instagramAccounts', []);
     const savedShowAllTab = getLocalStorage('showAllTab', true);
-    const savedWidgetName = localStorage.getItem('widget_custom_name') || '';
+    
+    // ✅ Si on a un wid dans l'URL, on charge le nom depuis le storage isolé
+    const urlWid = getWidFromUrl();
+    const savedWidgetName = urlWid 
+      ? (getLocalStorage('displayName', '') || '')
+      : (localStorage.getItem('widget_custom_name') || '');
 
     if (savedWidgetName) setWidgetName(savedWidgetName);
     if (savedApiKey) setNotionApiKey(savedApiKey);
@@ -406,7 +413,7 @@ const InstagramNotionWidget = () => {
     const prevTime = new Date(prevPost.date).getTime();
     const nextTime = new Date(nextPost.date).getTime();
     return new Date((prevTime + nextTime) / 2).toISOString().split('T')[0];
-    };
+  };
 
   const syncDateToNotion = async (post, newDate) => {
     if (isSyncing) return;
@@ -457,11 +464,19 @@ const InstagramNotionWidget = () => {
     setIsConfigOpen(false);
   };
 
-  // Sauvegarde/rename du nom de widget (optionnel si pas de ?wid)
+  // ✅ Sauvegarde/rename du nom de widget (gère isolation pour ?wid=)
   const saveWidgetName = () => {
     if (!widgetName.trim()) return showNotification('⚠️ Veuillez entrer un nom pour le widget', 'error');
 
-    // Vérif soft d’unicité (dans ce même navigateur)
+    // ✅ Si on a un ?wid= dans l'URL, on sauvegarde juste le nom d'affichage (isolé)
+    const urlWid = getWidFromUrl();
+    if (urlWid) {
+      setLocalStorage('displayName', widgetName);  // Sauvegarde isolée
+      showNotification(`✅ Nom du widget: "${widgetName}"`, 'success');
+      return;  // PAS de reload, PAS de migration
+    }
+
+    // Sinon (pas de wid), comportement normal avec migration
     const allKeys = Object.keys(localStorage);
     const conflict = allKeys.some(k => k.startsWith(`${widgetName}_`) || k.startsWith(`igw:${widgetName}:`));
     if (conflict && widgetName !== WIDGET_ID) {
@@ -497,7 +512,7 @@ const InstagramNotionWidget = () => {
   };
 
   const resetWidget = () => {
-    if (!window.confirm('⚠️ Réinitialiser ce widget ? (n’affecte pas Notion)')) return;
+    if (!window.confirm('⚠️ Réinitialiser ce widget ? (n'affecte pas Notion)')) return;
     try {
       const prefix1 = `${WIDGET_ID}_`;
       const prefix2 = `igw:${WIDGET_ID}:`;
@@ -526,6 +541,77 @@ const InstagramNotionWidget = () => {
       console.error(e);
       showNotification('Erreur lors de la création', 'error');
     }
+  };
+
+  /* --------------------------- Gestion Calendriers ------------------------ */
+
+  const addCalendar = () => {
+    if (!newCalendarName.trim() || !newCalendarDbId.trim()) {
+      return showNotification('Veuillez remplir tous les champs', 'error');
+    }
+    const exists = calendars.some(c => c.name === newCalendarName.trim() || c.databaseId === newCalendarDbId.trim());
+    if (exists) {
+      return showNotification('Ce calendrier existe déjà', 'error');
+    }
+    const newCalendar = { name: newCalendarName.trim(), databaseId: newCalendarDbId.trim() };
+    const updatedCalendars = [...calendars, newCalendar];
+    setCalendars(updatedCalendars);
+    setLocalStorage('calendars', updatedCalendars);
+    setActiveCalendar(newCalendarName.trim());
+    setLocalStorage('activeCalendar', newCalendarName.trim());
+    setNewCalendarName('');
+    setNewCalendarDbId('');
+    setIsCalendarManager(false);
+    loadAllCalendarsPosts(notionApiKey, updatedCalendars);
+    showNotification(`Calendrier "${newCalendarName.trim()}" ajouté`, 'success');
+  };
+
+  const removeCalendar = (calendarToRemove) => {
+    const updatedCalendars = calendars.filter(c => c.name !== calendarToRemove);
+    setCalendars(updatedCalendars);
+    setLocalStorage('calendars', updatedCalendars);
+    if (activeCalendar === calendarToRemove) {
+      const newActive = updatedCalendars.length > 0 ? updatedCalendars[0].name : 'default';
+      setActiveCalendar(newActive);
+      setLocalStorage('activeCalendar', newActive);
+    }
+    loadAllCalendarsPosts(notionApiKey, updatedCalendars);
+    showNotification(`Calendrier "${calendarToRemove}" supprimé`, 'success');
+  };
+
+  const startEditCalendar = (calendar) => {
+    setEditingCalendar(calendar.name);
+    setEditCalendarName(calendar.name);
+    setEditCalendarDbId(calendar.databaseId);
+  };
+
+  const saveEditCalendar = () => {
+    if (!editCalendarName.trim() || !editCalendarDbId.trim()) {
+      setEditingCalendar(null);
+      return;
+    }
+    const updatedCalendars = calendars.map(c =>
+      c.name === editingCalendar
+        ? { name: editCalendarName.trim(), databaseId: editCalendarDbId.trim() }
+        : c
+    );
+    setCalendars(updatedCalendars);
+    setLocalStorage('calendars', updatedCalendars);
+    if (activeCalendar === editingCalendar) {
+      setActiveCalendar(editCalendarName.trim());
+      setLocalStorage('activeCalendar', editCalendarName.trim());
+    }
+    setEditingCalendar(null);
+    setEditCalendarName('');
+    setEditCalendarDbId('');
+    loadAllCalendarsPosts(notionApiKey, updatedCalendars);
+    showNotification('Calendrier mis à jour', 'success');
+  };
+
+  const cancelEditCalendar = () => {
+    setEditingCalendar(null);
+    setEditCalendarName('');
+    setEditCalendarDbId('');
   };
 
   /* ------------------------------ Profils/Comptes ------------------------- */
@@ -687,6 +773,7 @@ const InstagramNotionWidget = () => {
 
   return (
     <div className="w-full max-w-md mx-auto bg-white">
+      {/* Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200">
         <div className="flex items-center space-x-3">
           <Camera size={24} className="text-gray-800" />
@@ -707,7 +794,7 @@ const InstagramNotionWidget = () => {
               className={`flex items-center space-x-1 p-2 hover:bg-gray-100 rounded-full transition-all ${(isRefreshing || isSyncing) ? 'opacity-50 cursor-not-allowed' : ''}`}
               title="Options d'actualisation"
             >
-              <RefreshCw size={20} className={`text-gray-700 ${ (isRefreshing || isSyncing) ? 'animate-spin' : '' }`} />
+              <RefreshCw size={20} className={`text-gray-700 ${(isRefreshing || isSyncing) ? 'animate-spin' : ''}`} />
               <ChevronDown size={14} className="text-gray-700" />
             </button>
 
@@ -732,6 +819,7 @@ const InstagramNotionWidget = () => {
 
       {showRefreshMenu && <div className="fixed inset-0 z-40" onClick={() => setShowRefreshMenu(false)} />}
 
+      {/* Profile Section */}
       <div className="p-4">
         <div className="flex items-center space-x-4 mb-4">
           <div className="relative cursor-pointer group" onClick={() => setIsProfileEdit(true)}>
@@ -763,4 +851,559 @@ const InstagramNotionWidget = () => {
               </div>
               <div className="text-center cursor-pointer hover:bg-gray-50 px-2 py-1 rounded" onClick={() => setIsProfileEdit(true)}>
                 <div className="font-semibold text-gray-900">{currentProfile.following}</div>
-                <div className="text-xs text-gray-500">suivi(e)s
+                <div className="text-xs text-gray-500">suivi(e)s</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mb-4">
+          <h2 className="font-semibold text-sm text-gray-900">{currentProfile.fullName}</h2>
+          <p className="text-sm text-gray-700 whitespace-pre-line mt-1">{currentProfile.bio}</p>
+        </div>
+      </div>
+
+      {/* Account Tabs */}
+      {shouldShowTabs && (
+        <div className="border-t border-b border-gray-200 overflow-x-auto">
+          <div className="flex space-x-0 min-w-max">
+            {shouldShowAllTab && (
+              <button
+                onClick={() => setActiveAccount('All')}
+                className={`flex-1 px-6 py-3 text-sm font-medium transition-all whitespace-nowrap ${activeAccount === 'All' ? 'text-gray-900 border-b-2 border-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                📊 Tous
+              </button>
+            )}
+            {accounts.map(account => (
+              <button
+                key={account}
+                onClick={() => setActiveAccount(account)}
+                className={`flex-1 px-6 py-3 text-sm font-medium transition-all whitespace-nowrap ${activeAccount === account ? 'text-gray-900 border-b-2 border-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+              >
+                {account}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Calendar Tabs */}
+      {shouldShowCalendarTabs && calendars.length > 1 && (
+        <div className="border-b border-gray-200 overflow-x-auto bg-gray-50">
+          <div className="flex space-x-0 min-w-max">
+            <button
+              onClick={() => setActiveCalendar('all')}
+              className={`flex-1 px-4 py-2 text-xs font-medium transition-all whitespace-nowrap ${activeCalendar === 'all' ? 'text-blue-600 border-b-2 border-blue-600 bg-white' : 'text-gray-600 hover:text-gray-800'}`}
+            >
+              📅 Tous
+            </button>
+            {calendars.map(calendar => (
+              <button
+                key={calendar.name}
+                onClick={() => setActiveCalendar(calendar.name)}
+                className={`flex-1 px-4 py-2 text-xs font-medium transition-all whitespace-nowrap ${activeCalendar === calendar.name ? 'text-blue-600 border-b-2 border-blue-600 bg-white' : 'text-gray-600 hover:text-gray-800'}`}
+              >
+                {calendar.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Posts Grid */}
+      <div className="grid grid-cols-3 gap-0.5 bg-gray-100">
+        {gridItems.map((post, index) => (
+          <div
+            key={post ? post.id : `empty-${index}`}
+            draggable={!!post}
+            onDragStart={(e) => post && handleDragStart(e, index)}
+            onDragEnd={handleDragEnd}
+            onDragOver={(e) => post && handleDragOver(e, index)}
+            onDragEnter={(e) => post && handleDragEnter(e, index)}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => post && handleDrop(e, index)}
+            onClick={() => {
+              if (post) {
+                setSelectedPost(post);
+                setModalOpen(true);
+              }
+            }}
+            className={`aspect-square bg-white cursor-pointer transition-all ${post ? 'hover:opacity-80' : ''} ${draggedIndex === index ? 'opacity-50' : ''} ${dragOverIndex === index ? 'ring-2 ring-blue-500 ring-inset' : ''}`}
+          >
+            {post ? (
+              <MediaDisplay urls={post.urls} caption={post.caption} />
+            ) : (
+              <div className="w-full h-full bg-gray-50"></div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Post Modal */}
+      <PostModal
+        post={selectedPost}
+        isOpen={modalOpen}
+        onClose={() => { setModalOpen(false); setSelectedPost(null); }}
+        onNavigate={(direction) => {
+          const currentIndex = filteredPosts.findIndex(p => p.id === selectedPost.id);
+          if (direction === 'next') {
+            const nextIndex = (currentIndex + 1) % filteredPosts.length;
+            setSelectedPost(filteredPosts[nextIndex]);
+          } else {
+            const prevIndex = (currentIndex - 1 + filteredPosts.length) % filteredPosts.length;
+            setSelectedPost(filteredPosts[prevIndex]);
+          }
+        }}
+      />
+
+      {/* Profile Edit Modal */}
+      {isProfileEdit && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" onClick={() => setIsProfileEdit(false)}>
+          <div className="bg-white rounded-lg max-w-md w-full p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="text-lg font-semibold">Modifier le profil</h3>
+              <button onClick={() => setIsProfileEdit(false)} className="text-gray-500 hover:text-gray-700">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Photo de profil (URL)</label>
+                <input
+                  type="text"
+                  value={currentProfile.profilePhoto}
+                  onChange={(e) => {
+                    const updated = { ...currentProfile, profilePhoto: e.target.value };
+                    saveProfile(activeAccount, updated);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder="https://..."
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Nom d'utilisateur</label>
+                <input
+                  type="text"
+                  value={currentProfile.username}
+                  onChange={(e) => {
+                    const updated = { ...currentProfile, username: e.target.value };
+                    saveProfile(activeAccount, updated);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Nom complet</label>
+                <input
+                  type="text"
+                  value={currentProfile.fullName}
+                  onChange={(e) => {
+                    const updated = { ...currentProfile, fullName: e.target.value };
+                    saveProfile(activeAccount, updated);
+                  }}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Bio</label>
+                <textarea
+                  value={currentProfile.bio}
+                  onChange={(e) => {
+                    const updated = { ...currentProfile, bio: e.target.value };
+                    saveProfile(activeAccount, updated);
+                  }}
+                  rows="4"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Abonnés</label>
+                  <input
+                    type="text"
+                    value={currentProfile.followers}
+                    onChange={(e) => {
+                      const updated = { ...currentProfile, followers: e.target.value };
+                      saveProfile(activeAccount, updated);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Suivis</label>
+                  <input
+                    type="text"
+                    value={currentProfile.following}
+                    onChange={(e) => {
+                      const updated = { ...currentProfile, following: e.target.value };
+                      saveProfile(activeAccount, updated);
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setIsProfileEdit(false)}
+              className="w-full mt-6 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              Fermer
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Config Modal */}
+      {isConfigOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto" onClick={() => setIsConfigOpen(false)}>
+          <div className="bg-white rounded-lg max-w-2xl w-full my-8" onClick={e => e.stopPropagation()}>
+            <div className="p-6 border-b border-gray-200">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold text-gray-900">⚙️ Configuration du Widget</h2>
+                <button onClick={() => setIsConfigOpen(false)} className="text-gray-500 hover:text-gray-700">
+                  <X size={24} />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+              {/* Widget Info */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-start space-x-3">
+                  <div className="text-blue-600 mt-0.5">ℹ️</div>
+                  <div className="flex-1">
+                    <h4 className="font-medium text-blue-900 mb-1">Informations du Widget</h4>
+                    <div className="text-sm text-blue-800 space-y-1">
+                      <p><strong>ID Widget:</strong> <code className="bg-blue-100 px-2 py-0.5 rounded">{WIDGET_ID}</code></p>
+                      {getWidFromUrl() && (
+                        <p className="text-xs text-blue-600">✅ Widget isolé via URL (?wid={getWidFromUrl()})</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Widget Name */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  🏷️ Nom du Widget {getWidFromUrl() && <span className="text-xs text-gray-500">(affichage uniquement)</span>}
+                </label>
+                <div className="flex space-x-2">
+                  <input
+                    type="text"
+                    value={widgetName}
+                    onChange={(e) => setWidgetName(e.target.value)}
+                    placeholder="Ex: Planning Client A"
+                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                  <button
+                    onClick={saveWidgetName}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors whitespace-nowrap"
+                  >
+                    Enregistrer
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  {getWidFromUrl() 
+                    ? "Nom d'affichage pour ce widget (données déjà isolées par ?wid=)" 
+                    : "Donnez un nom unique pour identifier ce widget"}
+                </p>
+              </div>
+
+              {/* Notion API Key */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">🔑 Clé API Notion</label>
+                <input
+                  type="password"
+                  value={notionApiKey}
+                  onChange={(e) => setNotionApiKey(e.target.value)}
+                  placeholder="secret_..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                <p className="text-xs text-gray-500 mt-1">Votre clé d'intégration Notion</p>
+              </div>
+
+              {/* Calendars Manager */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <label className="block text-sm font-medium text-gray-700">📅 Calendriers Notion</label>
+                  <button
+                    onClick={() => setIsCalendarManager(!isCalendarManager)}
+                    className="text-sm text-blue-600 hover:text-blue-700 flex items-center space-x-1"
+                  >
+                    <Plus size={16} />
+                    <span>Gérer</span>
+                  </button>
+                </div>
+
+                {calendars.length > 0 ? (
+                  <div className="space-y-2">
+                    {calendars.map(calendar => (
+                      <div key={calendar.name} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        {editingCalendar === calendar.name ? (
+                          <div className="flex-1 space-y-2">
+                            <input
+                              type="text"
+                              value={editCalendarName}
+                              onChange={(e) => setEditCalendarName(e.target.value)}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded"
+                              placeholder="Nom"
+                            />
+                            <input
+                              type="text"
+                              value={editCalendarDbId}
+                              onChange={(e) => setEditCalendarDbId(e.target.value)}
+                              className="w-full px-2 py-1 text-sm border border-gray-300 rounded font-mono"
+                              placeholder="ID Base de données"
+                            />
+                            <div className="flex space-x-2">
+                              <button onClick={saveEditCalendar} className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700">
+                                Sauvegarder
+                              </button>
+                              <button onClick={cancelEditCalendar} className="px-3 py-1 bg-gray-500 text-white text-sm rounded hover:bg-gray-600">
+                                Annuler
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex-1">
+                              <div className="font-medium text-sm">{calendar.name}</div>
+                              <div className="text-xs text-gray-500 font-mono">{calendar.databaseId.slice(0, 20)}...</div>
+                            </div>
+                            <div className="flex space-x-2">
+                              <button
+                                onClick={() => startEditCalendar(calendar)}
+                                className="p-1.5 text-gray-600 hover:text-blue-600 rounded"
+                              >
+                                <Edit3 size={14} />
+                              </button>
+                              <button
+                                onClick={() => removeCalendar(calendar.name)}
+                                className="p-1.5 text-gray-600 hover:text-red-600 rounded"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500 italic">Aucun calendrier configuré</p>
+                )}
+
+                {isCalendarManager && (
+                  <div className="mt-3 p-4 bg-blue-50 rounded-lg space-y-3">
+                    <h4 className="font-medium text-sm">Ajouter un calendrier</h4>
+                    <input
+                      type="text"
+                      value={newCalendarName}
+                      onChange={(e) => setNewCalendarName(e.target.value)}
+                      placeholder="Nom du calendrier (ex: Client A)"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    />
+                    <input
+                      type="text"
+                      value={newCalendarDbId}
+                      onChange={(e) => setNewCalendarDbId(e.target.value)}
+                      placeholder="ID de la base de données Notion"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg font-mono text-sm"
+                    />
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={addCalendar}
+                        className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 text-sm"
+                      >
+                        Ajouter
+                      </button>
+                      <button
+                        onClick={() => {
+                          setIsCalendarManager(false);
+                          setNewCalendarName('');
+                          setNewCalendarDbId('');
+                        }}
+                        className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm"
+                      >
+                        Annuler
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Accounts Manager */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <label className="block text-sm font-medium text-gray-700">👤 Comptes Instagram</label>
+                  <button
+                    onClick={() => setIsAccountManager(!isAccountManager)}
+                    className="text-sm text-blue-600 hover:text-blue-700 flex items-center space-x-1"
+                  >
+                    <Plus size={16} />
+                    <span>Gérer</span>
+                  </button>
+                </div>
+
+                {accounts.length > 0 ? (
+                  <div className="space-y-2">
+                    {accounts.map(account => (
+                      <div key={account} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        {editingAccount === account ? (
+                          <div className="flex-1 flex items-center space-x-2">
+                            <input
+                              type="text"
+                              value={editAccountName}
+                              onChange={(e) => setEditAccountName(e.target.value)}
+                              className="flex-1 px-2 py-1 text-sm border border-gray-300 rounded"
+                              onKeyPress={(e) => e.key === 'Enter' && renameAccount(account, editAccountName)}
+                            />
+                            <button
+                              onClick={() => renameAccount(account, editAccountName)}
+                              className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700"
+                            >
+                              OK
+                            </button>
+                            <button
+                              onClick={() => { setEditingAccount(null); setEditAccountName(''); }}
+                              className="px-3 py-1 bg-gray-500 text-white text-sm rounded hover:bg-gray-600"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <span className="font-medium text-sm">{account}</span>
+                            <div className="flex space-x-2">
+                              <button
+                                onClick={() => { setEditingAccount(account); setEditAccountName(account); }}
+                                className="p-1.5 text-gray-600 hover:text-blue-600 rounded"
+                              >
+                                <Edit3 size={14} />
+                              </button>
+                              <button
+                                onClick={() => removeAccount(account)}
+                                className="p-1.5 text-gray-600 hover:text-red-600 rounded"
+                              >
+                                <X size={14} />
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ))}
+
+                    {accounts.length > 0 && (
+                      <div className="flex items-center justify-between pt-2">
+                        <button
+                          onClick={removeAllAccounts}
+                          className="text-xs text-red-600 hover:text-red-700"
+                        >
+                          Supprimer tous les comptes
+                        </button>
+                        {accounts.length > 1 && !showAllTab && (
+                          <button
+                            onClick={() => { setShowAllTab(true); setLocalStorage('showAllTab', true); }}
+                            className="text-xs text-blue-600 hover:text-blue-700"
+                          >
+                            Afficher l'onglet "Tous"
+                          </button>
+                        )}
+                        {showAllTab && accounts.length > 1 && (
+                          <button
+                            onClick={hideAllTab}
+                            className="text-xs text-gray-600 hover:text-gray-700"
+                          >
+                            Masquer l'onglet "Tous"
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500 italic">Aucun compte configuré</p>
+                )}
+
+                {isAccountManager && (
+                  <div className="mt-3 p-4 bg-blue-50 rounded-lg space-y-3">
+                    <h4 className="font-medium text-sm">Ajouter un compte</h4>
+                    <input
+                      type="text"
+                      value={newAccountName}
+                      onChange={(e) => setNewAccountName(e.target.value)}
+                      placeholder="Nom du compte (ex: @moncompte)"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
+                    />
+                    <div className="flex space-x-2">
+                      <button
+                        onClick={addAccount}
+                        className="flex-1 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 text-sm"
+                      >
+                        Ajouter
+                      </button>
+                      <button
+                        onClick={() => { setIsAccountManager(false); setNewAccountName(''); }}
+                        className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 text-sm"
+                      >
+                        Annuler
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Widget Actions */}
+              {!getWidFromUrl() && (
+                <div className="pt-4 border-t border-gray-200 space-y-2">
+                  <button
+                    onClick={createNewWidget}
+                    className="w-full bg-green-600 text-white py-2 rounded-lg hover:bg-green-700 transition-colors text-sm"
+                  >
+                    🆕 Créer un nouveau widget indépendant
+                  </button>
+                  <button
+                    onClick={resetWidget}
+                    className="w-full bg-red-600 text-white py-2 rounded-lg hover:bg-red-700 transition-colors text-sm"
+                  >
+                    🗑️ Réinitialiser ce widget
+                  </button>
+                  <p className="text-xs text-gray-500 text-center">
+                    La réinitialisation supprime uniquement les données locales, pas vos données Notion
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <div className="p-6 border-t border-gray-200">
+              <button
+                onClick={connectToNotion}
+                className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium"
+              >
+                💾 Sauvegarder et Connecter
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notification */}
+      {notification && (
+        <div className="fixed bottom-4 right-4 z-50 animate-fade-in">
+          <div className={`px-4 py-3 rounded-lg shadow-lg flex items-center space-x-3 ${notification.type === 'success' ? 'bg-green-600' : notification.type === 'error' ? 'bg-red-600' : 'bg-blue-600'} text-white`}>
+            <span className="text-sm font-medium">{notification.message}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default InstagramNotionWidget;
