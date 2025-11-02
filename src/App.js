@@ -10,29 +10,48 @@ const generateWidgetId = () => {
   return `widget_${timestamp}_${random}`;
 };
 
-// Récupération ou création de l'ID du widget STABLE
+// Récupération ou création de l'ID du widget STABLE ET ISOLÉ
 const getStableWidgetId = () => {
-  // Clé fixe pour stocker l'ID du widget (NON préfixée pour éviter le cercle vicieux)
-  const WIDGET_ID_STORAGE_KEY = 'instagram_widget_stable_id';
-  
   try {
-    // Essayer de récupérer l'ID existant depuis localStorage
-    let widgetId = localStorage.getItem(WIDGET_ID_STORAGE_KEY);
+    // UTILISER sessionStorage pour l'isolation par iframe/onglet
+    // sessionStorage est unique à chaque contexte de navigation
+    let widgetId = sessionStorage.getItem('widget_id');
     
-    // Si pas d'ID existant, en créer un nouveau et le sauvegarder
-    if (!widgetId) {
-      widgetId = generateWidgetId();
-      localStorage.setItem(WIDGET_ID_STORAGE_KEY, widgetId);
-      console.log('✨ Nouveau widget créé avec ID:', widgetId);
-    } else {
+    if (widgetId) {
       console.log('✅ Widget existant chargé avec ID:', widgetId);
+      return widgetId;
     }
+    
+    // Pas d'ID en sessionStorage, vérifier si on a un ID "partagé" dans localStorage
+    // pour permettre la persistance entre rechargements
+    const storedWidgets = JSON.parse(localStorage.getItem('all_widgets') || '[]');
+    
+    // Générer un nouvel ID unique
+    widgetId = generateWidgetId();
+    
+    // Stocker dans sessionStorage (isolé par iframe)
+    sessionStorage.setItem('widget_id', widgetId);
+    
+    // Enregistrer ce widget dans la liste globale
+    if (!storedWidgets.includes(widgetId)) {
+      storedWidgets.push(widgetId);
+      localStorage.setItem('all_widgets', JSON.stringify(storedWidgets));
+    }
+    
+    console.log('✨ Nouveau widget créé avec ID:', widgetId);
+    console.log('📊 Widgets actifs:', storedWidgets.length);
     
     return widgetId;
   } catch (e) {
     console.error('Erreur lors de la récupération du Widget ID:', e);
     // Fallback : utiliser un ID basé uniquement sur le timestamp
-    return `widget_fallback_${Date.now()}`;
+    const fallbackId = `widget_fallback_${Date.now()}`;
+    try {
+      sessionStorage.setItem('widget_id', fallbackId);
+    } catch (err) {
+      console.error('Impossible de stocker dans sessionStorage:', err);
+    }
+    return fallbackId;
   }
 };
 
@@ -573,6 +592,15 @@ const InstagramNotionWidget = () => {
         
         keysToRemove.forEach(key => localStorage.removeItem(key));
         
+        // Supprimer l'ID du widget de la liste globale
+        try {
+          const storedWidgets = JSON.parse(localStorage.getItem('all_widgets') || '[]');
+          const updatedWidgets = storedWidgets.filter(id => id !== WIDGET_ID);
+          localStorage.setItem('all_widgets', JSON.stringify(updatedWidgets));
+        } catch (e) {
+          console.error('Erreur lors de la mise à jour de la liste des widgets:', e);
+        }
+        
         showNotification('Widget réinitialisé avec succès', 'success');
         
         // Recharger la page après 1 seconde
@@ -588,10 +616,10 @@ const InstagramNotionWidget = () => {
 
   // Fonction pour créer un nouveau widget indépendant
   const createNewWidget = () => {
-    if (window.confirm('🆕 Créer un nouveau widget indépendant ?\n\nCela va :\n1. Créer un nouveau widget avec un nouvel ID\n2. Conserver l\'ancien widget intact\n\nVous pourrez basculer entre les deux en utilisant des onglets différents de votre navigateur.')) {
+    if (window.confirm('🆕 Créer un nouveau widget indépendant ?\n\nCela va :\n1. Créer un nouveau widget avec un nouvel ID\n2. Conserver l\'ancien widget intact\n\nPour revenir à l\'ancien widget, vous devrez actualiser cette page.')) {
       try {
-        // Supprimer l'ID stable pour forcer la création d'un nouveau
-        localStorage.removeItem('instagram_widget_stable_id');
+        // Supprimer l'ID du sessionStorage pour forcer la création d'un nouveau
+        sessionStorage.removeItem('widget_id');
         
         showNotification('Nouveau widget créé ! Rechargement...', 'success');
         
@@ -1305,9 +1333,27 @@ const InstagramNotionWidget = () => {
                   🔄 Réinitialiser ce Widget
                 </button>
                 
-                <p className="text-xs text-gray-400 mt-2">
-                  💡 ID de ce widget : <code className="bg-gray-100 px-1 py-0.5 rounded text-xs">{WIDGET_ID.slice(0, 20)}...</code>
-                </p>
+                <div className="text-xs text-gray-400 mt-3 space-y-1">
+                  <p>💡 ID de ce widget :</p>
+                  <code className="bg-gray-100 px-2 py-1 rounded text-xs block break-all">
+                    {WIDGET_ID}
+                  </code>
+                  
+                  <p className="mt-2 pt-2 border-t">
+                    📊 Widgets actifs sur cette page : {(() => {
+                      try {
+                        const widgets = JSON.parse(localStorage.getItem('all_widgets') || '[]');
+                        return widgets.length;
+                      } catch (e) {
+                        return '?';
+                      }
+                    })()}
+                  </p>
+                  
+                  <p className="text-xs text-gray-500 italic">
+                    ℹ️ Chaque widget dans Notion a son propre ID et ses propres données
+                  </p>
+                </div>
               </div>
             </div>
           </div>
