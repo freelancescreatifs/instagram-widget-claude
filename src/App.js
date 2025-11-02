@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Camera, Settings, RefreshCw, Edit3, X, ChevronLeft, ChevronRight, Play, Plus, ChevronDown, Calendar } from 'lucide-react';
 
-const API_BASE = 'https://instagram-widget-claude.vercel.app/api';
+const API_BASE = 'https://freelance-creatif.vercel.app/api';
 
 // Génération d'un ID unique pour chaque instance du widget
 const generateWidgetId = () => {
@@ -10,48 +10,28 @@ const generateWidgetId = () => {
   return `widget_${timestamp}_${random}`;
 };
 
-// Récupération ou création de l'ID du widget STABLE ET ISOLÉ
+// Récupération ou création de l'ID du widget avec NOMMAGE MANUEL
 const getStableWidgetId = () => {
   try {
-    // UTILISER sessionStorage pour l'isolation par iframe/onglet
-    // sessionStorage est unique à chaque contexte de navigation
-    let widgetId = sessionStorage.getItem('widget_id');
+    // NOUVELLE APPROCHE : Demander à l'utilisateur de nommer son widget
+    // Ceci garantit une isolation parfaite entre widgets
+    let widgetName = localStorage.getItem('widget_custom_name');
     
-    if (widgetId) {
-      console.log('✅ Widget existant chargé avec ID:', widgetId);
-      return widgetId;
+    if (widgetName) {
+      console.log('✅ Widget nommé chargé:', widgetName);
+      return widgetName;
     }
     
-    // Pas d'ID en sessionStorage, vérifier si on a un ID "partagé" dans localStorage
-    // pour permettre la persistance entre rechargements
-    const storedWidgets = JSON.parse(localStorage.getItem('all_widgets') || '[]');
+    // Pas de nom personnalisé, générer un ID par défaut
+    // et demander à l'utilisateur de le personnaliser
+    const defaultId = generateWidgetId();
+    console.log('⚠️ Widget sans nom détecté, ID par défaut:', defaultId);
+    console.log('💡 Conseil: Donnez un nom à votre widget dans les Paramètres pour une meilleure isolation');
     
-    // Générer un nouvel ID unique
-    widgetId = generateWidgetId();
-    
-    // Stocker dans sessionStorage (isolé par iframe)
-    sessionStorage.setItem('widget_id', widgetId);
-    
-    // Enregistrer ce widget dans la liste globale
-    if (!storedWidgets.includes(widgetId)) {
-      storedWidgets.push(widgetId);
-      localStorage.setItem('all_widgets', JSON.stringify(storedWidgets));
-    }
-    
-    console.log('✨ Nouveau widget créé avec ID:', widgetId);
-    console.log('📊 Widgets actifs:', storedWidgets.length);
-    
-    return widgetId;
+    return defaultId;
   } catch (e) {
     console.error('Erreur lors de la récupération du Widget ID:', e);
-    // Fallback : utiliser un ID basé uniquement sur le timestamp
-    const fallbackId = `widget_fallback_${Date.now()}`;
-    try {
-      sessionStorage.setItem('widget_id', fallbackId);
-    } catch (err) {
-      console.error('Impossible de stocker dans sessionStorage:', err);
-    }
-    return fallbackId;
+    return `widget_fallback_${Date.now()}`;
   }
 };
 
@@ -311,6 +291,7 @@ const InstagramNotionWidget = () => {
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [isProfileEdit, setIsProfileEdit] = useState(false);
   const [notionApiKey, setNotionApiKey] = useState('');
+  const [widgetName, setWidgetName] = useState(''); // Nom personnalisé pour isolation
   
   // Gestion multi-calendriers
   const [calendars, setCalendars] = useState([]);
@@ -366,6 +347,13 @@ const InstagramNotionWidget = () => {
     const savedProfiles = getLocalStorage('instagramProfiles', null);
     const savedAccounts = getLocalStorage('instagramAccounts', []);
     const savedShowAllTab = getLocalStorage('showAllTab', true);
+    const savedWidgetName = localStorage.getItem('widget_custom_name') || '';
+    
+    // Charger le nom personnalisé du widget
+    if (savedWidgetName) {
+      setWidgetName(savedWidgetName);
+      console.log('✅ Widget nommé:', savedWidgetName);
+    }
     
     // Message de confirmation du chargement
     const isConfigured = savedApiKey && savedCalendars.length > 0;
@@ -577,9 +565,68 @@ const InstagramNotionWidget = () => {
     setIsConfigOpen(false);
   };
 
+  // Fonction pour sauvegarder le nom personnalisé du widget
+  const saveWidgetName = () => {
+    if (!widgetName.trim()) {
+      showNotification('⚠️ Veuillez entrer un nom pour le widget', 'error');
+      return;
+    }
+
+    // Vérifier que le nom est unique (pas déjà utilisé)
+    const allWidgetNames = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.endsWith('_notionApiKey')) {
+        const potentialName = key.replace('_notionApiKey', '');
+        if (potentialName !== widgetName && potentialName !== WIDGET_ID) {
+          allWidgetNames.push(potentialName);
+        }
+      }
+    }
+
+    if (allWidgetNames.includes(widgetName)) {
+      showNotification('❌ Ce nom est déjà utilisé par un autre widget', 'error');
+      return;
+    }
+
+    // Sauvegarder l'ancien ID
+    const oldId = WIDGET_ID;
+
+    // Migrer les données de l'ancien ID vers le nouveau nom
+    const keysToMigrate = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith(oldId + '_')) {
+        keysToMigrate.push(key);
+      }
+    }
+
+    // Copier les données avec le nouveau préfixe
+    keysToMigrate.forEach(oldKey => {
+      const value = localStorage.getItem(oldKey);
+      const newKey = widgetName + '_' + oldKey.substring(oldId.length + 1);
+      localStorage.setItem(newKey, value);
+    });
+
+    // Sauvegarder le nom personnalisé
+    localStorage.setItem('widget_custom_name', widgetName);
+
+    // Supprimer les anciennes clés seulement si ce n'était pas déjà un nom personnalisé
+    if (oldId.startsWith('widget_')) {
+      keysToMigrate.forEach(key => localStorage.removeItem(key));
+    }
+
+    showNotification(`✅ Widget renommé en "${widgetName}"`, 'success');
+
+    // Recharger la page pour appliquer le nouveau nom
+    setTimeout(() => {
+      window.location.reload();
+    }, 1500);
+  };
+
   // Fonction pour réinitialiser complètement le widget
   const resetWidget = () => {
-    if (window.confirm('⚠️ Êtes-vous sûr de vouloir réinitialiser ce widget ?\n\nToutes les données seront effacées (API, calendriers, comptes, profils).\n\nVos données Notion ne seront PAS affectées.')) {
+    if (window.confirm('⚠️ Êtes-vous sûr de vouloir réinitialiser ce widget ?\n\nToutes les données seront effacées (API, calendriers, comptes, profils, nom du widget).\n\nVos données Notion ne seront PAS affectées.')) {
       try {
         // Supprimer toutes les clés préfixées de ce widget
         const keysToRemove = [];
@@ -592,14 +639,8 @@ const InstagramNotionWidget = () => {
         
         keysToRemove.forEach(key => localStorage.removeItem(key));
         
-        // Supprimer l'ID du widget de la liste globale
-        try {
-          const storedWidgets = JSON.parse(localStorage.getItem('all_widgets') || '[]');
-          const updatedWidgets = storedWidgets.filter(id => id !== WIDGET_ID);
-          localStorage.setItem('all_widgets', JSON.stringify(updatedWidgets));
-        } catch (e) {
-          console.error('Erreur lors de la mise à jour de la liste des widgets:', e);
-        }
+        // Supprimer le nom personnalisé
+        localStorage.removeItem('widget_custom_name');
         
         showNotification('Widget réinitialisé avec succès', 'success');
         
@@ -616,12 +657,12 @@ const InstagramNotionWidget = () => {
 
   // Fonction pour créer un nouveau widget indépendant
   const createNewWidget = () => {
-    if (window.confirm('🆕 Créer un nouveau widget indépendant ?\n\nCela va :\n1. Créer un nouveau widget avec un nouvel ID\n2. Conserver l\'ancien widget intact\n\nPour revenir à l\'ancien widget, vous devrez actualiser cette page.')) {
+    if (window.confirm('🆕 Créer un nouveau widget indépendant ?\n\nCela va créer un widget vierge. Vous devrez lui donner un nom unique pour l\'isoler des autres widgets.')) {
       try {
-        // Supprimer l'ID du sessionStorage pour forcer la création d'un nouveau
-        sessionStorage.removeItem('widget_id');
+        // Supprimer le nom personnalisé pour forcer un nouveau widget
+        localStorage.removeItem('widget_custom_name');
         
-        showNotification('Nouveau widget créé ! Rechargement...', 'success');
+        showNotification('Nouveau widget créé ! Donnez-lui un nom...', 'success');
         
         // Recharger la page après 1 seconde
         setTimeout(() => {
@@ -1286,6 +1327,43 @@ const InstagramNotionWidget = () => {
                 />
               </div>
 
+              <div className="bg-yellow-50 border-l-4 border-yellow-400 p-3 rounded">
+                <div className="flex items-start">
+                  <span className="text-2xl mr-2">🏷️</span>
+                  <div className="flex-1">
+                    <label className="block text-sm font-bold text-yellow-800 mb-2">
+                      Nom de ce Widget (Important pour l'isolation)
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={widgetName}
+                        onChange={(e) => setWidgetName(e.target.value)}
+                        placeholder="Ex: Widget-Client-A, Planning-Mars, etc."
+                        className="flex-1 p-2 border-2 border-yellow-300 rounded-lg focus:ring-2 focus:ring-yellow-500 bg-white"
+                      />
+                      <button
+                        onClick={saveWidgetName}
+                        className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors whitespace-nowrap"
+                        disabled={!widgetName.trim()}
+                      >
+                        💾 Sauver
+                      </button>
+                    </div>
+                    <p className="text-xs text-yellow-700 mt-2">
+                      <strong>⚠️ Requis pour isoler plusieurs widgets sur la même page Notion !</strong>
+                      <br />
+                      Donnez un nom unique à chaque widget (ex: "Client-A", "Client-B")
+                    </p>
+                    {widgetName && (
+                      <p className="text-xs text-green-600 mt-1 font-medium">
+                        ✅ Ce widget s'appelle: "{widgetName}"
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <div className="bg-blue-50 p-3 rounded-lg text-xs">
                 <p className="font-medium mb-2">📋 Colonnes Notion requises :</p>
                 <ul className="space-y-1 text-gray-600">
@@ -1339,19 +1417,30 @@ const InstagramNotionWidget = () => {
                     {WIDGET_ID}
                   </code>
                   
-                  <p className="mt-2 pt-2 border-t">
-                    📊 Widgets actifs sur cette page : {(() => {
-                      try {
-                        const widgets = JSON.parse(localStorage.getItem('all_widgets') || '[]');
-                        return widgets.length;
-                      } catch (e) {
-                        return '?';
-                      }
-                    })()}
-                  </p>
+                  {!widgetName && WIDGET_ID.startsWith('widget_') && (
+                    <div className="bg-red-50 border border-red-200 p-2 rounded mt-2">
+                      <p className="text-red-600 font-medium text-xs">
+                        ⚠️ Ce widget n'a pas de nom personnalisé !
+                      </p>
+                      <p className="text-red-500 text-xs mt-1">
+                        → Donnez-lui un nom ci-dessus pour garantir l'isolation entre widgets
+                      </p>
+                    </div>
+                  )}
                   
-                  <p className="text-xs text-gray-500 italic">
-                    ℹ️ Chaque widget dans Notion a son propre ID et ses propres données
+                  {widgetName && (
+                    <div className="bg-green-50 border border-green-200 p-2 rounded mt-2">
+                      <p className="text-green-600 font-medium text-xs">
+                        ✅ Widget nommé: "{widgetName}"
+                      </p>
+                      <p className="text-green-500 text-xs mt-1">
+                        Ce widget est isolé des autres widgets
+                      </p>
+                    </div>
+                  )}
+                  
+                  <p className="text-xs text-gray-500 italic mt-2">
+                    ℹ️ Donnez un nom unique à chaque widget pour éviter les conflits
                   </p>
                 </div>
               </div>
